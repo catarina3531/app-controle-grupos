@@ -1,11 +1,12 @@
 import streamlit as st
 import pandas as pd
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 import gspread
 from google.oauth2.service_account import Credentials
 import altair as alt
+import json
 
-st.set_page_config(page_title="CRM Grupos - Hotel", page_icon="🏨", layout="wide")
+st.set_page_config(page_title="CRM Grupos", page_icon="🏨", layout="wide")
 
 URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1_vvU_tgDtHCqtoKG4xR5XMfmnujGTXf7pndgg_aQoX0/edit?gid=0#gid=0"
 
@@ -22,75 +23,95 @@ try:
     aba_dados = conectar_planilha()
     dados_planilha = aba_dados.get_all_records()
     df = pd.DataFrame(dados_planilha)
+    if not df.empty:
+        df.columns = df.columns.str.strip() # Remove espaços invisíveis
 except Exception as e:
-    st.error(f"Erro ao conectar: {e}")
+    st.error(f"Erro ao conectar com o banco de dados: {e}")
     st.stop()
 
 # ------------------------------------------------
-# Menu Lateral
+# Sistema de Login Simples
 # ------------------------------------------------
-st.sidebar.title("🏨 Menu Principal")
-menu = st.sidebar.radio("Navegação:", [
-    "📊 1. Dashboard Gerencial", 
-    "🛎️ 2. Nova Solicitação (Hotel)", 
-    "💼 3. Gestão de Vendas (Comercial)", 
-    "👀 4. Follow-up (Hotel)"
-])
+if "logado" not in st.session_state:
+    st.session_state["logado"] = False
+    st.session_state["perfil"] = ""
+
+if not st.session_state["logado"]:
+    st.title("🔐 Acesso ao Sistema de Grupos")
+    senha = st.text_input("Digite sua senha de acesso", type="password")
+    
+    if st.button("Entrar", type="primary"):
+        if senha == "hotel123":
+            st.session_state["logado"] = True
+            st.session_state["perfil"] = "Hotel"
+            st.rerun()
+        elif senha == "vendas123":
+            st.session_state["logado"] = True
+            st.session_state["perfil"] = "Vendas"
+            st.rerun()
+        elif senha == "gerente123":
+            st.session_state["logado"] = True
+            st.session_state["perfil"] = "Gerencial"
+            st.rerun()
+        else:
+            st.error("Senha incorreta!")
+    st.stop() # Pausa a execução do app aqui se não estiver logado
+
+# Botão de Sair
+st.sidebar.button("Sair (Logout)", on_click=lambda: st.session_state.clear())
+
+# ------------------------------------------------
+# Controle de Permissões (Menu)
+# ------------------------------------------------
+perfil = st.session_state["perfil"]
+st.sidebar.title(f"🏨 Menu ({perfil})")
+
+# Define as opções baseado no perfil
+opcoes_menu = []
+if perfil == "Gerencial":
+    opcoes_menu = ["📊 Dashboard", "🛎️ Nova Solicitação", "💼 Gestão de Vendas", "👀 Follow-up"]
+elif perfil == "Hotel":
+    opcoes_menu = ["🛎️ Nova Solicitação", "👀 Follow-up"]
+elif perfil == "Vendas":
+    opcoes_menu = ["📊 Dashboard", "💼 Gestão de Vendas"]
+
+menu = st.sidebar.radio("Navegação:", opcoes_menu)
 
 # ------------------------------------------------
 # 1. Dashboard Gerencial
 # ------------------------------------------------
-if menu == "📊 1. Dashboard Gerencial":
+if menu == "📊 Dashboard":
     st.header("📊 Visão Gerencial de Grupos")
-    
     if df.empty:
-        st.info("Nenhum dado cadastrado ainda.")
+        st.info("Nenhum dado cadastrado.")
     else:
         df['Data Envio'] = pd.to_datetime(df['Data Envio'], format='%d/%m/%Y', errors='coerce')
         df['Mês/Ano'] = df['Data Envio'].dt.to_period('M').astype(str)
-        
         meses_disponiveis = sorted(df['Mês/Ano'].dropna().unique().tolist(), reverse=True)
-        mes_selecionado = st.selectbox("Filtrar por Mês de Entrada do Lead:", ["Todos"] + meses_disponiveis)
+        mes_selecionado = st.selectbox("Filtrar por Mês de Entrada:", ["Todos"] + meses_disponiveis)
         
-        if mes_selecionado != "Todos":
-            df_dash = df[df['Mês/Ano'] == mes_selecionado]
-        else:
-            df_dash = df
+        df_dash = df[df['Mês/Ano'] == mes_selecionado] if mes_selecionado != "Todos" else df
 
-        st.markdown("### Indicadores Principais")
         col1, col2, col3, col4 = st.columns(4)
-        
-        total_leads = len(df_dash)
-        enviados = len(df_dash[df_dash['Status'] == 'Cotação enviada'])
-        confirmados = len(df_dash[df_dash['Status'] == 'Confirmado'])
-        recusados = len(df_dash[df_dash['Status'] == 'Recusado'])
-        
-        col1.metric("📌 Total de Leads Recebidos", total_leads)
-        col2.metric("📤 Propostas Enviadas", enviados)
-        col3.metric("✅ Grupos Confirmados", confirmados)
-        col4.metric("❌ Grupos Recusados", recusados)
+        col1.metric("📌 Leads Recebidos", len(df_dash))
+        col2.metric("📤 Propostas Enviadas", len(df_dash[df_dash['Status'] == 'Cotação enviada']))
+        col3.metric("✅ Confirmados", len(df_dash[df_dash['Status'] == 'Confirmado']))
+        col4.metric("❌ Recusados", len(df_dash[df_dash['Status'] == 'Recusado']))
         
         st.markdown("---")
-        col_graf1, col_graf2 = st.columns(2)
-        
-        with col_graf1:
-            st.subheader("Funil de Status")
+        c1, c2 = st.columns(2)
+        with c1:
             status_contagem = df_dash['Status'].value_counts().reset_index()
             status_contagem.columns = ['Status', 'Quantidade']
-            grafico_barras = alt.Chart(status_contagem).mark_bar(color='#4CAF50').encode(
-                x='Quantidade', y=alt.Y('Status', sort='-x')
-            )
+            grafico_barras = alt.Chart(status_contagem).mark_bar(color='#4CAF50').encode(x='Quantidade', y=alt.Y('Status', sort='-x'))
             st.altair_chart(grafico_barras, use_container_width=True)
             
-        with col_graf2:
-            st.subheader("Motivos de Recusa")
+        with c2:
             df_recusados = df_dash[df_dash['Status'] == 'Recusado']
             if not df_recusados.empty:
                 motivos = df_recusados['Motivo Recusa'].value_counts().reset_index()
                 motivos.columns = ['Motivo', 'Quantidade']
-                grafico_pizza = alt.Chart(motivos).mark_arc(innerRadius=50).encode(
-                    theta='Quantidade', color='Motivo', tooltip=['Motivo', 'Quantidade']
-                )
+                grafico_pizza = alt.Chart(motivos).mark_arc(innerRadius=50).encode(theta='Quantidade', color='Motivo', tooltip=['Motivo', 'Quantidade'])
                 st.altair_chart(grafico_pizza, use_container_width=True)
             else:
                 st.info("Nenhuma recusa neste período.")
@@ -98,155 +119,157 @@ if menu == "📊 1. Dashboard Gerencial":
 # ------------------------------------------------
 # 2. Nova Solicitação (Hotel)
 # ------------------------------------------------
-elif menu == "🛎️ 2. Nova Solicitação (Hotel)":
+elif menu == "🛎️ Nova Solicitação":
     st.header("🛎️ Enviar Grupo para Vendas")
+    st.markdown("Defina a data global do grupo e informe a quantidade de quartos por dia.")
 
-    with st.form("form_novo_grupo", clear_on_submit=True):
-        st.subheader("Dados do Cliente")
-        col1, col2, col3, col4 = st.columns(4)
-        with col1: empresa = st.text_input("Empresa / Agência")
-        with col2: contato = st.text_input("Nome do Contato")
-        with col3: email = st.text_input("E-mail")
-        with col4: telefone = st.text_input("Telefone")
-            
-        st.subheader("Datas")
-        col_in, col_out = st.columns(2)
-        with col_in: checkin = st.date_input("Check-in", value=date.today())
-        with col_out: checkout = st.date_input("Check-out", value=date.today())
+    empresa = st.text_input("Empresa / Agência")
+    col1, col2, col3 = st.columns(3)
+    with col1: contato = st.text_input("Contato")
+    with col2: email = st.text_input("E-mail")
+    with col3: telefone = st.text_input("Telefone")
         
-        st.subheader("Necessidade de Hospedagem")
-        col_s, col_d, col_t = st.columns(3)
-        with col_s: 
-            st.markdown("**SINGLE**")
-            qtde_single = st.number_input("Qtde Single", min_value=0, step=1)
-            tarifa_single = st.number_input("Tarifa Single (R$)", min_value=0.0, format="%.2f")
-        with col_d: 
-            st.markdown("**DUPLO**")
-            qtde_duplo = st.number_input("Qtde Duplo", min_value=0, step=1)
-            tarifa_duplo = st.number_input("Tarifa Duplo (R$)", min_value=0.0, format="%.2f")
-        with col_t: 
-            st.markdown("**TRIPLO**")
-            qtde_triplo = st.number_input("Qtde Triplo", min_value=0, step=1)
-            tarifa_triplo = st.number_input("Tarifa Triplo (R$)", min_value=0.0, format="%.2f")
-
-        st.markdown("---")
-        submit_btn = st.form_submit_button("🚀 Enviar Solicitação", use_container_width=True)
-
-        if submit_btn:
-            dias = (checkout - checkin).days
-            if dias <= 0 or empresa == "":
-                st.error("⚠️ Verifique as datas e o nome da empresa.")
+    st.subheader("Bloco Diário de Quartos (Room Block)")
+    col_in, col_out = st.columns(2)
+    with col_in: checkin = st.date_input("Primeiro Check-in", value=date.today())
+    with col_out: checkout = st.date_input("Último Check-out", value=date.today() + timedelta(days=1))
+    
+    dias = (checkout - checkin).days
+    
+    if dias > 0:
+        # Cria a tabela interativa para os dias
+        datas_lista = [checkin + timedelta(days=i) for i in range(dias)]
+        dados_dias = {"Data": [d.strftime("%d/%m/%Y") for d in datas_lista], "Single": [0]*dias, "Duplo": [0]*dias, "Triplo": [0]*dias}
+        df_grid = pd.DataFrame(dados_dias)
+        
+        st.markdown("**Preencha a quantidade de quartos necessária para cada dia:**")
+        # Editor interativo do Streamlit
+        df_editado = st.data_editor(df_grid, hide_index=True, use_container_width=True)
+        
+        # Calcula totais
+        tot_sin = int(df_editado["Single"].sum())
+        tot_dup = int(df_editado["Duplo"].sum())
+        tot_tri = int(df_editado["Triplo"].sum())
+        
+        st.info(f"**Resumo do Pedido:** {tot_sin} RN Single | {tot_dup} RN Duplo | {tot_tri} RN Triplo")
+        
+        if st.button("🚀 Enviar Solicitação para Vendas", type="primary"):
+            if empresa == "":
+                st.error("O nome da Empresa é obrigatório.")
             else:
-                id_unico = "G-" + datetime.now().strftime("%Y%m%d%H%M%S")
-                data_atual = datetime.now().strftime("%d/%m/%Y")
+                id_unico = "G-" + datetime.now().strftime("%Y%m%d%H%M")
+                # Salva o bloco diário como texto/JSON na planilha
+                mapa_str = df_editado.to_json(orient='records')
                 
-                total_rn = (qtde_single + qtde_duplo + qtde_triplo) * dias
-                receita = ((qtde_single * tarifa_single) + (qtde_duplo * tarifa_duplo) + (qtde_triplo * tarifa_triplo)) * dias
-                
-                # Campos ordenados conf. nova planilha (Sem KAM, com Triplo)
                 nova_linha = [
-                    id_unico, data_atual, empresa, contato, email, telefone, 
+                    id_unico, datetime.now().strftime("%d/%m/%Y"), empresa, contato, email, telefone, 
                     checkin.strftime("%d/%m/%Y"), checkout.strftime("%d/%m/%Y"), 
-                    qtde_single, tarifa_single, qtde_duplo, tarifa_duplo, qtde_triplo, tarifa_triplo,
-                    dias, total_rn, receita, "Enviado para time de vendas", "", ""
+                    tot_sin, tot_dup, tot_tri, 0, 0, 0, 0, # Tarifas e Receita iniciam zeradas
+                    "Enviado para time de vendas", "", "", mapa_str
                 ]
                 aba_dados.append_row(nova_linha)
-                st.success("✅ Grupo registrado e enviado para a equipe de Vendas!")
+                st.success("✅ Grupo registrado! A equipe de vendas já pode definir as tarifas.")
                 st.cache_resource.clear() 
+    else:
+        st.error("O Check-out deve ser maior que o Check-in.")
 
 # ------------------------------------------------
 # 3. Gestão de Vendas (Comercial)
 # ------------------------------------------------
-elif menu == "💼 3. Gestão de Vendas (Comercial)":
-    st.header("💼 Atualização de Status (Equipe de Vendas)")
+elif menu == "💼 Gestão de Vendas":
+    st.header("💼 Tratativa e Precificação de Grupos")
     
     if df.empty:
-        st.warning("Não há grupos cadastrados.")
+        st.warning("Não há grupos.")
     else:
         df_pendentes = df[~df['Status'].isin(['Confirmado', 'Recusado'])]
-        
         if df_pendentes.empty:
-            st.success("🎉 Todos os grupos foram tratados (Confirmados ou Recusados). Nenhum pendente!")
+            st.success("Nenhum grupo pendente no momento!")
         else:
-            opcoes_grupos = df_pendentes['ID'].astype(str) + " - " + df_pendentes['Empresa'] + " (" + df_pendentes['Status'] + ")"
-            grupo_selecionado = st.selectbox("Escolha o Grupo", opcoes_grupos)
+            opcoes = df_pendentes['ID'].astype(str) + " - " + df_pendentes['Empresa'] + " (" + df_pendentes['Status'] + ")"
+            grupo_sel = st.selectbox("Escolha o Grupo:", opcoes)
             
-            id_selecionado = grupo_selecionado.split(" - ")[0]
+            id_sel = grupo_sel.split(" - ")[0]
+            linha_atual = df_pendentes[df_pendentes['ID'] == id_sel].iloc[0]
+            
+            # Mostra o resumo que o hotel pediu
+            rn_s = int(linha_atual['Total RN Single'] or 0)
+            rn_d = int(linha_atual['Total RN Duplo'] or 0)
+            rn_t = int(linha_atual['Total RN Triplo'] or 0)
+            
+            st.info(f"🏨 **Necessidade do Hotel:** {rn_s} Single | {rn_d} Duplo | {rn_t} Triplo")
             
             with st.form("form_vendas"):
-                novo_status = st.radio("Mudar status para:", ["Cotação enviada", "Confirmado", "Recusado"])
+                st.subheader("1. Definição de Tarifas")
+                col1, col2, col3 = st.columns(3)
+                with col1: t_single = st.number_input("Tarifa Single (R$)", value=float(linha_atual.get('Tarifa Single', 0) or 0))
+                with col2: t_duplo = st.number_input("Tarifa Duplo (R$)", value=float(linha_atual.get('Tarifa Duplo', 0) or 0))
+                with col3: t_triplo = st.number_input("Tarifa Triplo (R$)", value=float(linha_atual.get('Tarifa Triplo', 0) or 0))
                 
-                st.markdown("---")
-                st.info("💡 Se 'Cotação enviada', defina o Deadline. Se 'Recusado', informe o Motivo.")
-                novo_deadline = st.date_input("Deadline (Se cotação enviada)", value=date.today())
-                motivo = st.selectbox("Motivo (Se recusado)", ["", "Preço", "Estrutura", "Não informado", "Sem disponibilidade"])
+                st.subheader("2. Ação de Vendas")
+                novo_status = st.radio("Mudar status para:", ["Cotação enviada", "Confirmado", "Recusado"], horizontal=True)
                 
-                salvar_status = st.form_submit_button("Salvar Atualização", type="primary", use_container_width=True)
+                c_data, c_motivo = st.columns(2)
+                with c_data: novo_deadline = st.date_input("Deadline (Se cotação)", value=date.today())
+                with c_motivo: motivo = st.selectbox("Motivo (Se recusado)", ["", "Preço", "Estrutura", "Não informado", "Sem disponibilidade"])
                 
-                if salvar_status:
+                if st.form_submit_button("💾 Salvar e Calcular Receita", type="primary"):
                     if novo_status == "Recusado" and motivo == "":
-                        st.error("⚠️ Para recusar, você deve escolher um motivo.")
+                        st.error("⚠️ Escolha um motivo de recusa.")
                     else:
-                        linha_planilha = df[df['ID'] == id_selecionado].index[0] + 2
+                        receita_total = (rn_s * t_single) + (rn_d * t_duplo) + (rn_t * t_triplo)
+                        linha_planilha = df[df['ID'] == id_sel].index[0] + 2
                         
-                        # Novas colunas na planilha (Triplo adicionado, KAM removido): 
-                        # 18: Status | 19: Deadline | 20: Motivo Recusa
-                        aba_dados.update_cell(linha_planilha, 18, novo_status)
+                        # Atualizando as colunas exatas da planilha
+                        aba_dados.update_cell(linha_planilha, 12, t_single)
+                        aba_dados.update_cell(linha_planilha, 13, t_duplo)
+                        aba_dados.update_cell(linha_planilha, 14, t_triplo)
+                        aba_dados.update_cell(linha_planilha, 15, receita_total)
+                        aba_dados.update_cell(linha_planilha, 16, novo_status)
                         
                         if novo_status == "Cotação enviada":
-                            aba_dados.update_cell(linha_planilha, 19, novo_deadline.strftime("%d/%m/%Y"))
-                            aba_dados.update_cell(linha_planilha, 20, "")
+                            aba_dados.update_cell(linha_planilha, 17, novo_deadline.strftime("%d/%m/%Y"))
+                            aba_dados.update_cell(linha_planilha, 18, "")
                         elif novo_status == "Recusado":
-                            aba_dados.update_cell(linha_planilha, 19, "") 
-                            aba_dados.update_cell(linha_planilha, 20, motivo)
+                            aba_dados.update_cell(linha_planilha, 17, "") 
+                            aba_dados.update_cell(linha_planilha, 18, motivo)
                         elif novo_status == "Confirmado":
-                            aba_dados.update_cell(linha_planilha, 19, "") 
-                            aba_dados.update_cell(linha_planilha, 20, "") 
+                            aba_dados.update_cell(linha_planilha, 17, "") 
+                            aba_dados.update_cell(linha_planilha, 18, "") 
                             
-                        st.success(f"Status do grupo {id_selecionado} atualizado para {novo_status}!")
+                        st.success(f"✅ Atualizado! Receita calculada: R$ {receita_total:,.2f}")
                         st.cache_resource.clear()
 
 # ------------------------------------------------
 # 4. Follow-up (Hotel)
 # ------------------------------------------------
-elif menu == "👀 4. Follow-up (Hotel)":
+elif menu == "👀 Follow-up":
     st.header("👀 Acompanhamento da Operação (Hotel)")
-    
     if df.empty:
         st.warning("Nenhum dado.")
     else:
-        tab1, tab2, tab3 = st.tabs(["⚠️ Sem Tratativa (Vendas)", "⏳ Controle de Deadlines", "✅ Confirmados e Histórico"])
+        t1, t2, t3 = st.tabs(["⚠️ Sem Tratativa (Vendas)", "⏳ Cotações em Aberto", "✅ Confirmados"])
         
-        with tab1:
-            st.subheader("Enviados para Vendas, mas sem ação ainda")
+        with t1:
+            st.subheader("Aguardando Precificação")
             df_sem_acao = df[df['Status'] == 'Enviado para time de vendas']
-            st.dataframe(df_sem_acao[['Data Envio', 'Empresa', 'Contato', 'Receita Total']], use_container_width=True)
+            st.dataframe(df_sem_acao[['Data Envio', 'Empresa', 'Contato', 'Total RN Single', 'Total RN Duplo', 'Total RN Triplo']], use_container_width=True)
             
-        with tab2:
-            st.subheader("Cotações Enviadas (Visão Deadline)")
+        with t2:
+            st.subheader("Cotações Enviadas (Deadlines)")
             df_cotacoes = df[df['Status'] == 'Cotação enviada'].copy()
-            
             if not df_cotacoes.empty:
                 df_cotacoes['Deadline_Date'] = pd.to_datetime(df_cotacoes['Deadline'], format='%d/%m/%Y', errors='coerce')
                 hoje = pd.to_datetime(date.today())
-                
                 df_cotacoes['Situação'] = df_cotacoes['Deadline_Date'].apply(lambda x: "🔴 Atrasado" if pd.notnull(x) and x < hoje else "🟢 No Prazo")
-                
                 st.dataframe(df_cotacoes[['Empresa', 'Contato', 'Deadline', 'Situação', 'Receita Total']], use_container_width=True)
             else:
-                st.info("Nenhuma cotação aguardando deadline no momento.")
+                st.info("Nenhuma cotação em aberto.")
                 
-        with tab3:
-            st.subheader("Histórico de Confirmados")
+        with t3:
+            st.subheader("Histórico de Grupos Confirmados")
             df_conf = df[df['Status'] == 'Confirmado'].copy()
-            
             if not df_conf.empty:
-                df_conf['Ano Check-in'] = pd.to_datetime(df_conf['Check-in'], format='%d/%m/%Y', errors='coerce').dt.year.astype(str)
-                filtro_ano = st.selectbox("Filtrar por Ano do Evento", ["Todos"] + sorted(df_conf['Ano Check-in'].dropna().unique().tolist(), reverse=True))
-                
-                if filtro_ano != "Todos":
-                    df_conf = df_conf[df_conf['Ano Check-in'] == filtro_ano]
-                    
-                st.dataframe(df_conf[['Check-in', 'Check-out', 'Empresa', 'Total RN', 'Receita Total']], use_container_width=True)
+                st.dataframe(df_conf[['Check-in', 'Check-out', 'Empresa', 'Receita Total']], use_container_width=True)
             else:
                 st.info("Nenhum grupo confirmado ainda.")
