@@ -160,11 +160,31 @@ elif menu == "🛎️ Nova Solicitação":
                 id_unico = "G-" + datetime.now().strftime("%Y%m%d%H%M")
                 mapa_str = df_editado.to_json(orient='records')
                 
+                # ORDEM EXATA DAS 19 COLUNAS (A até S):
+                # ID(1), Data Envio(2), Empresa(3), Contato(4), E-mail(5), Telefone(6), 
+                # Check-in(7), Check-out(8), Total RN Single(9), Total RN Duplo(10), Total RN Triplo(11), 
+                # Tarifa Single(12), Tarifa Duplo(13), Tarifa Triplo(14), Receita Total(15), 
+                # Status(16), Deadline(17), Motivo Recusa(18), Mapa de Quartos(19)
                 nova_linha = [
-                    id_unico, datetime.now().strftime("%d/%m/%Y"), empresa, contato, email, telefone, 
-                    checkin.strftime("%d/%m/%Y"), checkout.strftime("%d/%m/%Y"), 
-                    tot_sin, tot_dup, tot_tri, 0, 0, 0, 0, 
-                    "Enviado para time de vendas", "", "", mapa_str
+                    id_unico, 
+                    datetime.now().strftime("%d/%m/%Y"), 
+                    empresa, 
+                    contato, 
+                    email, 
+                    telefone, 
+                    checkin.strftime("%d/%m/%Y"), 
+                    checkout.strftime("%d/%m/%Y"), 
+                    tot_sin, 
+                    tot_dup, 
+                    tot_tri, 
+                    0, # Tarifa Single inicial
+                    0, # Tarifa Duplo inicial
+                    0, # Tarifa Triplo inicial
+                    0, # Receita Total inicial
+                    "Enviado para time de vendas", # Status (Coluna P/Q correta)
+                    "", # Deadline
+                    "", # Motivo Recusa
+                    mapa_str # Mapa de Quartos
                 ]
                 aba_dados.append_row(nova_linha)
                 st.success("✅ Grupo registrado! A equipe de vendas já pode definir as tarifas.")
@@ -220,6 +240,7 @@ elif menu == "💼 Gestão de Vendas":
                         receita_total = (rn_s * t_single) + (rn_d * t_duplo) + (rn_t * t_triplo)
                         linha_planilha = df[df['ID'] == id_sel].index[0] + 2
                         
+                        # Atualizando as colunas na planilha correta (Tarifas nas colunas 12, 13, 14; Receita na 15; Status na 16...)
                         aba_dados.update_cell(linha_planilha, 12, t_single)
                         aba_dados.update_cell(linha_planilha, 13, t_duplo)
                         aba_dados.update_cell(linha_planilha, 14, t_triplo)
