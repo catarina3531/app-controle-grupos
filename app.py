@@ -154,7 +154,6 @@ if not df.empty:
     df['Status_Clean'] = df['Status'].astype(str).str.strip().str.lower()
     hoje = pd.to_datetime(date.today())
     
-    # 1. Alerta de Deadline Vencido (Piscando)
     df_cot_atrasadas = df[df['Status_Clean'].str.contains("cotação enviada", na=False)].copy()
     if not df_cot_atrasadas.empty:
         df_cot_atrasadas['Deadline_Dt'] = pd.to_datetime(df_cot_atrasadas['Deadline'], format='%d/%m/%Y', errors='coerce')
@@ -162,7 +161,6 @@ if not df.empty:
         if len(atrasados) > 0:
             st.markdown(f'<div class="alerta-piscando">🚨 ATENÇÃO: Existem <b>{len(atrasados)}</b> cotações com o DEADLINE VENCIDO!</div>', unsafe_allow_html=True)
 
-    # 2. Alerta de Sem Tratativa > 2 dias úteis (Piscando)
     df_sem_tratativa = df[df['Status_Clean'].str.contains("enviado", na=False)].copy()
     if not df_sem_tratativa.empty:
         df_sem_tratativa['Envio_Dt'] = pd.to_datetime(df_sem_tratativa['Data Envio'], format='%d/%m/%Y', errors='coerce')
@@ -210,28 +208,33 @@ if menu == "📊 Dashboard":
     if df.empty:
         st.info("Nenhum dado cadastrado.")
     else:
+        # Visão 1: Por Mês de Entrada (Solicitações)
         df['Data Envio'] = pd.to_datetime(df['Data Envio'], format='%d/%m/%Y', errors='coerce')
-        df['Mês/Ano'] = df['Data Envio'].dt.to_period('M').astype(str)
-        meses_disponiveis = sorted(df['Mês/Ano'].dropna().unique().tolist(), reverse=True)
-        mes_selecionado = st.selectbox("Filtrar por Mês de Entrada:", ["Todos"] + meses_disponiveis)
+        df['Mês/Ano Envio'] = df['Data Envio'].dt.to_period('M').astype(str)
         
-        df_dash = df[df['Mês/Ano'] == mes_selecionado] if mes_selecionado != "Todos" else df
+        meses_disponiveis = sorted(df['Mês/Ano Envio'].dropna().unique().tolist(), reverse=True)
+        mes_selecionado = st.selectbox("Filtrar por Mês de Entrada (Criação do Lead):", ["Todos"] + meses_disponiveis)
+        
+        df_dash = df[df['Mês/Ano Envio'] == mes_selecionado] if mes_selecionado != "Todos" else df
 
+        st.subheader("📌 Indicadores por Mês de Solicitação")
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("📌 Leads Recebidos", len(df_dash))
-        col2.metric("📤 Propostas Enviadas", len(df_dash[df_dash['Status_Clean'].str.contains("cotação enviada", na=False)]))
-        col3.metric("✅ Confirmados", len(df_dash[df_dash['Status_Clean'].str.contains("confirmado", na=False)]))
-        col4.metric("❌ Recusados", len(df_dash[df_dash['Status_Clean'].str.contains("recusado", na=False)]))
+        col1.metric("Leads Recebidos", len(df_dash))
+        col2.metric("Propostas Enviadas", len(df_dash[df_dash['Status_Clean'].str.contains("cotação enviada", na=False)]))
+        col3.metric("Confirmados", len(df_dash[df_dash['Status_Clean'].str.contains("confirmado", na=False)]))
+        col4.metric("Recusados", len(df_dash[df_dash['Status_Clean'].str.contains("recusado", na=False)]))
         
         st.markdown("---")
         c1, c2 = st.columns(2)
         with c1:
+            st.subheader("Funil de Status (Mês selecionado)")
             status_contagem = df_dash['Status'].value_counts().reset_index()
             status_contagem.columns = ['Status', 'Quantidade']
             grafico_barras = alt.Chart(status_contagem).mark_bar(color='#4CAF50').encode(x='Quantidade', y=alt.Y('Status', sort='-x'))
             st.altair_chart(grafico_barras, use_container_width=True)
             
         with c2:
+            st.subheader("Motivos de Recusa")
             df_recusados = df_dash[df_dash['Status_Clean'].str.contains("recusado", na=False)]
             if not df_recusados.empty:
                 motivos = df_recusados['Motivo Recusa'].value_counts().reset_index()
@@ -240,6 +243,54 @@ if menu == "📊 Dashboard":
                 st.altair_chart(grafico_pizza, use_container_width=True)
             else:
                 st.info("Nenhuma recusa neste período.")
+
+        # Visão 2: Impacto na Ocupação (Por Mês de Check-in dos Confirmados)
+        st.markdown("---")
+        st.header("📈 Impacto na Ocupação (Por Mês de Check-in)")
+        st.markdown("Resumo financeiro e de quartos dos grupos **Confirmados**, alocados no mês em que o evento/hospedagem vai acontecer.")
+
+        df_confirmados = df[df['Status_Clean'].str.contains("confirmado", na=False)].copy()
+        if not df_confirmados.empty:
+            df_confirmados['Checkin_Dt'] = pd.to_datetime(df_confirmados['Check-in'], format='%d/%m/%Y', errors='coerce')
+            df_confirmados['Mes_Checkin'] = df_confirmados['Checkin_Dt'].dt.to_period('M').astype(str)
+            
+            # Agrupa por Mês de Check-in
+            resumo_checkin = df_confirmados.groupby('Mes_Checkin').agg(
+                Qtd_Grupos=('ID', 'count'),
+                Total_RN_Single=('Total RN Single', lambda x: pd.to_numeric(x, errors='coerce').sum()),
+                Total_RN_Duplo=('Total RN Duplo', lambda x: pd.to_numeric(x, errors='coerce').sum()),
+                Total_RN_Triplo=('Total RN Triplo', lambda x: pd.to_numeric(x, errors='coerce').sum()),
+                Receita_Prevista=('Receita Total', lambda x: pd.to_numeric(x, errors='coerce').sum())
+            ).reset_index()
+            
+            resumo_checkin['Total_RN_Geral'] = resumo_checkin['Total_RN_Single'] + resumo_checkin['Total_RN_Duplo'] + resumo_checkin['Total_RN_Triplo']
+            resumo_checkin = resumo_checkin.sort_values('Mes_Checkin', ascending=False)
+            
+            # Exibe tabela formatada
+            st.dataframe(
+                resumo_checkin.rename(columns={
+                    'Mes_Checkin': 'Mês de Check-in',
+                    'Qtd_Grupos': 'Qtd. Grupos',
+                    'Total_RN_Single': 'RN Single',
+                    'Total_RN_Duplo': 'RN Duplo',
+                    'Total_RN_Triplo': 'RN Triplo',
+                    'Total_RN_Geral': 'Total RNs',
+                    'Receita_Prevista': 'Receita Prevista (R$)'
+                }), 
+                hide_index=True, 
+                use_container_width=True
+            )
+            
+            # Gráfico de Receita por Mês de Check-in
+            grafico_impacto = alt.Chart(resumo_checkin).mark_bar(color='#2196F3').encode(
+                x=alt.X('Mes_Checkin:N', title='Mês de Check-in', sort='ascending'),
+                y=alt.Y('Receita_Prevista:Q', title='Receita Prevista (R$)'),
+                tooltip=['Mes_Checkin', 'Qtd_Grupos', 'Total_RN_Geral', 'Receita_Prevista']
+            ).properties(title="Receita Confirmada por Mês de Hospedagem")
+            st.altair_chart(grafico_impacto, use_container_width=True)
+            
+        else:
+            st.info("Ainda não há grupos confirmados para calcular o impacto na ocupação.")
 
 # ------------------------------------------------
 # 2. Nova Solicitação (Hotel)
@@ -416,7 +467,6 @@ elif menu == "👀 Follow-up":
             df_conf = df[df['Status_Clean'].str.contains("confirmado", na=False)].copy()
             
             if not df_conf.empty:
-                # Converte o Check-in para data e extrai o Mês/Ano (ex: 2026-08)
                 df_conf['Checkin_Date'] = pd.to_datetime(df_conf['Check-in'], format='%d/%m/%Y', errors='coerce')
                 df_conf['Mes_Ano'] = df_conf['Checkin_Date'].dt.to_period('M').astype(str)
                 
