@@ -39,9 +39,7 @@ try:
     # Tratamento Blindado para a Aba de Usuários
     todos_valores_user = aba_usuarios.get_all_values()
     
-    # Se a aba estiver totalmente vazia (ou só com cabeçalho), popula os usuários padrão
     if len(todos_valores_user) <= 1:
-        # Garante que o cabeçalho existe
         if len(todos_valores_user) == 0:
             aba_usuarios.append_row(['Usuario', 'Senha', 'Perfil', 'Primeiro Acesso'])
             
@@ -59,7 +57,6 @@ try:
             aba_usuarios.append_row(u)
         todos_valores_user = aba_usuarios.get_all_values()
 
-    # Converte os valores da aba de usuários em DataFrame de forma segura
     header = todos_valores_user[0]
     rows = todos_valores_user[1:]
     df_usuarios = pd.DataFrame(rows, columns=header)
@@ -155,7 +152,7 @@ if not df.empty:
                 st.warning(f"⚠️ **Aviso Comercial:** Há **{len(atraso_vendas)}** solicitações sem tratativa há mais de 2 dias úteis!")
 
 # ------------------------------------------------
-# Menu Lateral por Perfil
+# Menu Lateral por Perfil (Liberado Follow-up para Vendas)
 # ------------------------------------------------
 perfil = st.session_state["perfil"]
 usuario_atual = st.session_state["usuario"]
@@ -168,7 +165,7 @@ if perfil == "Gerencial":
 elif perfil == "Hotel":
     opcoes_menu = ["🛎️ Nova Solicitação", "👀 Follow-up"]
 elif perfil == "Vendas":
-    opcoes_menu = ["📊 Dashboard", "💼 Gestão de Vendas"]
+    opcoes_menu = ["📊 Dashboard", "💼 Gestão de Vendas", "👀 Follow-up"] # Liberado aqui também!
 
 menu = st.sidebar.radio("Navegação:", opcoes_menu)
 
@@ -351,14 +348,14 @@ elif menu == "💼 Gestão de Vendas":
                         st.cache_resource.clear()
 
 # ------------------------------------------------
-# 4. Follow-up (Hotel)
+# 4. Follow-up (Hotel / Vendas / Gerencial)
 # ------------------------------------------------
 elif menu == "👀 Follow-up":
-    st.header("👀 Acompanhamento da Operação (Hotel)")
+    st.header("👀 Acompanhamento da Operação")
     if df.empty:
         st.warning("Nenhum dado cadastrado.")
     else:
-        t1, t2, t3 = st.tabs(["⚠️ Sem Tratativa (Vendas)", "⏳ Cotações em Aberto", "✅ Confirmados"])
+        t1, t2, t3 = st.tabs(["⚠️ Sem Tratativa", "⏳ Cotações em Aberto", "✅ Confirmados"])
         
         with t1:
             st.subheader("Aguardando Precificação / Ação da Comercial")
@@ -382,7 +379,7 @@ elif menu == "👀 Follow-up":
                 st.info("Nenhuma cotação em aberto.")
                 
         with t3:
-            st.subheader("Histórico de grupos Confirmados")
+            st.subheader("Histórico de Grupos Confirmados")
             df_conf = df[df['Status_Clean'].str.contains("confirmado", na=False)].copy()
             
             if not df_conf.empty:
