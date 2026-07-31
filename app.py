@@ -8,6 +8,28 @@ import json
 
 st.set_page_config(page_title="CRM Grupos", page_icon="🏨", layout="wide")
 
+# 🌟 Estilo CSS para o efeito de piscar (blink) nos alertas
+st.markdown("""
+    <style>
+    @keyframes piscar {
+        0% { opacity: 1; }
+        50% { opacity: 0.3; }
+        100% { opacity: 1; }
+    }
+    .alerta-piscando {
+        animation: piscar 1.2s infinite;
+        padding: 10px;
+        border-radius: 5px;
+        background-color: #ffcccc;
+        color: #990000;
+        font-weight: bold;
+        text-align: center;
+        margin-bottom: 10px;
+        border: 1px solid #ff9999;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
 URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1_vvU_tgDtHCqtoKG4xR5XMfmnujGTXf7pndgg_aQoX0/edit?gid=0#gid=0"
 
 @st.cache_resource(ttl=30) 
@@ -25,7 +47,6 @@ def conectar_planilhas():
 try:
     aba_dados, aba_usuarios = conectar_planilhas()
     
-    # Carrega Dados de Grupos
     dados_planilha = aba_dados.get_all_records(expected_headers=[
         'ID', 'Data Envio', 'Empresa', 'Contato', 'E-mail', 'Telefone', 
         'Check-in', 'Check-out', 'Total RN Single', 'Total RN Duplo', 'Total RN Triplo', 
@@ -36,9 +57,7 @@ try:
     if not df.empty:
         df.columns = df.columns.str.strip()
         
-    # Tratamento Blindado para a Aba de Usuários
     todos_valores_user = aba_usuarios.get_all_values()
-    
     if len(todos_valores_user) <= 1:
         if len(todos_valores_user) == 0:
             aba_usuarios.append_row(['Usuario', 'Senha', 'Perfil', 'Primeiro Acesso'])
@@ -101,7 +120,6 @@ if not st.session_state["logado"]:
                 st.error("Senha incorreta!")
     st.stop()
 
-# Tela de Redefinição Obrigatória de Senha
 if st.session_state["mudar_senha"]:
     st.title("🔑 Redefinição de Senha Obrigatória")
     st.warning("Detectamos que você está usando uma senha padrão ou temporária. Por favor, crie sua nova senha pessoal para continuar.")
@@ -130,45 +148,41 @@ if st.session_state["mudar_senha"]:
 st.sidebar.button("Sair (Logout)", on_click=lambda: st.session_state.clear())
 
 # ------------------------------------------------
-# Alertas Automáticos (Pop-ups Ajustados)
+# Alertas Automáticos com Efeito Piscando (Todos os Perfis)
 # ------------------------------------------------
 if not df.empty:
     df['Status_Clean'] = df['Status'].astype(str).str.strip().str.lower()
     hoje = pd.to_datetime(date.today())
     
-    # Alerta 1: Deadline Atrasado (Para todos)
+    # 1. Alerta de Deadline Vencido (Piscando para todos)
     df_cot_atrasadas = df[df['Status_Clean'].str.contains("cotação enviada", na=False)].copy()
     if not df_cot_atrasadas.empty:
         df_cot_atrasadas['Deadline_Dt'] = pd.to_datetime(df_cot_atrasadas['Deadline'], format='%d/%m/%Y', errors='coerce')
         atrasados = df_cot_atrasadas[df_cot_atrasadas['Deadline_Dt'] < hoje]
-        if len(atrasados) > 0 and st.session_state["perfil"] in ["Gerencial", "Vendas", "Hotel"]:
-            st.error(f"🚨 **ATENÇÃO:** Existem **{len(atrasados)}** cotações com o **Deadline Vencido**!")
+        if len(atrasados) > 0:
+            st.markdown(f'<div class="alerta-piscando">🚨 ATENÇÃO: Existem <b>{len(atrasados)}</b> cotações com o DEADLINE VENCIDO!</div>', unsafe_allow_html=True)
 
-    # Alerta 2: Sem Tratativa (Específico para Vendas - Calculando dias úteis reais)
-    if st.session_state["perfil"] == "Vendas":
-        df_sem_tratativa = df[df['Status_Clean'].str.contains("enviado", na=False)].copy()
-        if not df_sem_tratativa.empty:
-            df_sem_tratativa['Envio_Dt'] = pd.to_datetime(df_sem_tratativa['Data Envio'], format='%d/%m/%Y', errors='coerce')
-            
-            # Função para contar dias úteis desconsiderando fins de semana
-            def conta_dias_uteis(data_envio):
-                if pd.isnull(data_envio): return 0
-                dias_uteis = 0
-                atual = data_envio.date()
-                fim = date.today()
-                while atual < fim:
-                    atual += timedelta(days=1)
-                    if atual.weekday() < 5:  # Segunda a Sexta (0 a 4)
-                        dias_uteis += 1
-                return dias_uteis
+    # 2. Alerta de Sem Tratativa > 2 dias úteis (Piscando para TODOS os perfis)
+    df_sem_tratativa = df[df['Status_Clean'].str.contains("enviado", na=False)].copy()
+    if not df_sem_tratativa.empty:
+        df_sem_tratativa['Envio_Dt'] = pd.to_datetime(df_sem_tratativa['Data Envio'], format='%d/%m/%Y', errors='coerce')
+        
+        def conta_dias_uteis(data_envio):
+            if pd.isnull(data_envio): return 0
+            dias_uteis = 0
+            atual = data_envio.date()
+            fim = date.today()
+            while atual < fim:
+                atual += timedelta(days=1)
+                if atual.weekday() < 5: 
+                    dias_uteis += 1
+            return dias_uteis
 
-            df_sem_tratativa['Dias_Uteis_Atraso'] = df_sem_tratativa['Envio_Dt'].apply(conta_dias_uteis)
-            
-            # Dispara o alerta se passou de 2 dias úteis (ou seja, >= 3 dias úteis)
-            atraso_vendas = df_sem_tratativa[df_sem_tratativa['Dias_Uteis_Atraso'] > 2]
-            
-            if len(atraso_vendas) > 0:
-                st.warning(f"⚠️ **Aviso Comercial:** Há **{len(atraso_vendas)}** solicitações sem tratativa há mais de 2 dias úteis sem devolutiva!")
+        df_sem_tratativa['Dias_Uteis_Atraso'] = df_sem_tratativa['Envio_Dt'].apply(conta_dias_uteis)
+        atraso_vendas = df_sem_tratativa[df_sem_tratativa['Dias_Uteis_Atraso'] > 2]
+        
+        if len(atraso_vendas) > 0:
+            st.markdown(f'<div class="alerta-piscando">⚠️ AVISO OPERACIONAL: Há <b>{len(atraso_vendas)}</b> solicitações SEM TRATATIVA há mais de 2 dias úteis!</div>', unsafe_allow_html=True)
 
 # ------------------------------------------------
 # Menu Lateral por Perfil
