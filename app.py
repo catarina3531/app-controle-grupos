@@ -130,12 +130,13 @@ if st.session_state["mudar_senha"]:
 st.sidebar.button("Sair (Logout)", on_click=lambda: st.session_state.clear())
 
 # ------------------------------------------------
-# Alertas Automáticos (Pop-ups)
+# Alertas Automáticos (Pop-ups Ajustados)
 # ------------------------------------------------
 if not df.empty:
     df['Status_Clean'] = df['Status'].astype(str).str.strip().str.lower()
     hoje = pd.to_datetime(date.today())
     
+    # Alerta 1: Deadline Atrasado (Para todos)
     df_cot_atrasadas = df[df['Status_Clean'].str.contains("cotação enviada", na=False)].copy()
     if not df_cot_atrasadas.empty:
         df_cot_atrasadas['Deadline_Dt'] = pd.to_datetime(df_cot_atrasadas['Deadline'], format='%d/%m/%Y', errors='coerce')
@@ -143,16 +144,34 @@ if not df.empty:
         if len(atrasados) > 0 and st.session_state["perfil"] in ["Gerencial", "Vendas", "Hotel"]:
             st.error(f"🚨 **ATENÇÃO:** Existem **{len(atrasados)}** cotações com o **Deadline Vencido**!")
 
+    # Alerta 2: Sem Tratativa (Específico para Vendas - Calculando dias úteis reais)
     if st.session_state["perfil"] == "Vendas":
         df_sem_tratativa = df[df['Status_Clean'].str.contains("enviado", na=False)].copy()
         if not df_sem_tratativa.empty:
             df_sem_tratativa['Envio_Dt'] = pd.to_datetime(df_sem_tratativa['Data Envio'], format='%d/%m/%Y', errors='coerce')
-            atraso_vendas = df_sem_tratativa[(hoje - df_sem_tratativa['Envio_Dt']).dt.days >= 3]
+            
+            # Função para contar dias úteis desconsiderando fins de semana
+            def conta_dias_uteis(data_envio):
+                if pd.isnull(data_envio): return 0
+                dias_uteis = 0
+                atual = data_envio.date()
+                fim = date.today()
+                while atual < fim:
+                    atual += timedelta(days=1)
+                    if atual.weekday() < 5:  # Segunda a Sexta (0 a 4)
+                        dias_uteis += 1
+                return dias_uteis
+
+            df_sem_tratativa['Dias_Uteis_Atraso'] = df_sem_tratativa['Envio_Dt'].apply(conta_dias_uteis)
+            
+            # Dispara o alerta se passou de 2 dias úteis (ou seja, >= 3 dias úteis)
+            atraso_vendas = df_sem_tratativa[df_sem_tratativa['Dias_Uteis_Atraso'] > 2]
+            
             if len(atraso_vendas) > 0:
-                st.warning(f"⚠️ **Aviso Comercial:** Há **{len(atraso_vendas)}** solicitações sem tratativa há mais de 2 dias úteis!")
+                st.warning(f"⚠️ **Aviso Comercial:** Há **{len(atraso_vendas)}** solicitações sem tratativa há mais de 2 dias úteis sem devolutiva!")
 
 # ------------------------------------------------
-# Menu Lateral por Perfil (Liberado Follow-up para Vendas)
+# Menu Lateral por Perfil
 # ------------------------------------------------
 perfil = st.session_state["perfil"]
 usuario_atual = st.session_state["usuario"]
@@ -165,7 +184,7 @@ if perfil == "Gerencial":
 elif perfil == "Hotel":
     opcoes_menu = ["🛎️ Nova Solicitação", "👀 Follow-up"]
 elif perfil == "Vendas":
-    opcoes_menu = ["📊 Dashboard", "💼 Gestão de Vendas", "👀 Follow-up"] # Liberado aqui também!
+    opcoes_menu = ["📊 Dashboard", "💼 Gestão de Vendas", "👀 Follow-up"]
 
 menu = st.sidebar.radio("Navegação:", opcoes_menu)
 
@@ -348,7 +367,7 @@ elif menu == "💼 Gestão de Vendas":
                         st.cache_resource.clear()
 
 # ------------------------------------------------
-# 4. Follow-up (Hotel / Vendas / Gerencial)
+# 4. Follow-up
 # ------------------------------------------------
 elif menu == "👀 Follow-up":
     st.header("👀 Acompanhamento da Operação")
