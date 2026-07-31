@@ -25,7 +25,7 @@ def conectar_planilhas():
 try:
     aba_dados, aba_usuarios = conectar_planilhas()
     
-    # Carrega Dados
+    # Carrega Dados de Grupos
     dados_planilha = aba_dados.get_all_records(expected_headers=[
         'ID', 'Data Envio', 'Empresa', 'Contato', 'E-mail', 'Telefone', 
         'Check-in', 'Check-out', 'Total RN Single', 'Total RN Duplo', 'Total RN Triplo', 
@@ -36,27 +36,34 @@ try:
     if not df.empty:
         df.columns = df.columns.str.strip()
         
-    # Carrega Usuários
-    usuarios_data = aba_usuarios.get_all_records(expected_headers=['Usuario', 'Senha', 'Perfil', 'Primeiro Acesso'])
-    df_usuarios = pd.DataFrame(usuarios_data)
-    if not df_usuarios.empty:
-        df_usuarios.columns = df_usuarios.columns.str.strip()
-        
-        # Se a aba estiver vazia, cria os usuários padrão iniciais
-        if len(df_usuarios) == 0:
-            usuarios_iniciais = [
-                ["Amanda", "mudar@123", "Hotel", "Sim"],
-                ["Italo", "mudar@123", "Hotel", "Sim"],
-                ["Amanda Rolim", "mudar@123", "Vendas", "Sim"],
-                ["Rafaella", "mudar@123", "Vendas", "Sim"],
-                ["Elton", "mudar@123", "Vendas", "Sim"],
-                ["Catarina", "mudar@123", "Gerencial", "Sim"],
-                ["Kessia", "mudar@123", "Gerencial", "Sim"],
-                ["Cecilia", "mudar@123", "Gerencial", "Sim"],
-            ]
-            for u in usuarios_iniciais:
-                aba_usuarios.append_row(u)
-            df_usuarios = pd.DataFrame(usuarios_iniciais, columns=['Usuario', 'Senha', 'Perfil', 'Primeiro Acesso'])
+    # Tratamento Blindado para a Aba de Usuários
+    todos_valores_user = aba_usuarios.get_all_values()
+    
+    # Se a aba estiver totalmente vazia (ou só com cabeçalho), popula os usuários padrão
+    if len(todos_valores_user) <= 1:
+        # Garante que o cabeçalho existe
+        if len(todos_valores_user) == 0:
+            aba_usuarios.append_row(['Usuario', 'Senha', 'Perfil', 'Primeiro Acesso'])
+            
+        usuarios_iniciais = [
+            ["Amanda", "mudar@123", "Hotel", "Sim"],
+            ["Italo", "mudar@123", "Hotel", "Sim"],
+            ["Amanda Rolim", "mudar@123", "Vendas", "Sim"],
+            ["Rafaella", "mudar@123", "Vendas", "Sim"],
+            ["Elton", "mudar@123", "Vendas", "Sim"],
+            ["Catarina", "mudar@123", "Gerencial", "Sim"],
+            ["Kessia", "mudar@123", "Gerencial", "Sim"],
+            ["Cecilia", "mudar@123", "Gerencial", "Sim"],
+        ]
+        for u in usuarios_iniciais:
+            aba_usuarios.append_row(u)
+        todos_valores_user = aba_usuarios.get_all_values()
+
+    # Converte os valores da aba de usuários em DataFrame de forma segura
+    header = todos_valores_user[0]
+    rows = todos_valores_user[1:]
+    df_usuarios = pd.DataFrame(rows, columns=header)
+    df_usuarios.columns = df_usuarios.columns.str.strip()
             
 except Exception as e:
     st.error(f"Erro ao conectar com as abas do Google Sheets: {e}")
@@ -74,7 +81,8 @@ if "logado" not in st.session_state:
 if not st.session_state["logado"]:
     st.title("🔐 Acesso ao Sistema de Grupos")
     
-    usuario_input = st.selectbox("Selecione seu Nome de Usuário", [""] + df_usuarios['Usuario'].tolist())
+    lista_usuarios_validos = df_usuarios['Usuario'].dropna().tolist()
+    usuario_input = st.selectbox("Selecione seu Nome de Usuário", [""] + lista_usuarios_validos)
     senha_input = st.text_input("Senha", type="password")
     
     if st.button("Entrar", type="primary"):
@@ -374,7 +382,7 @@ elif menu == "👀 Follow-up":
                 st.info("Nenhuma cotação em aberto.")
                 
         with t3:
-            st.subheader("Histórico de Grupos Confirmados")
+            st.subheader("Histórico de grupos Confirmados")
             df_conf = df[df['Status_Clean'].str.contains("confirmado", na=False)].copy()
             
             if not df_conf.empty:
@@ -418,7 +426,6 @@ elif menu == "⚙️ Gerenciar Usuários" and perfil == "Gerencial":
                 elif novo_nome in df_usuarios['Usuario'].values:
                     st.error("Já existe um usuário com esse nome.")
                 else:
-                    # Adiciona com senha padrão e força troca
                     aba_usuarios.append_row([novo_nome, "mudar@123", novo_perfil, "Sim"])
                     st.success(f"Usuário **{novo_nome}** criado com sucesso! A senha inicial é `mudar@123`.")
                     st.cache_resource.clear()
