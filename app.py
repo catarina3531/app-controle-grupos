@@ -154,7 +154,7 @@ if not df.empty:
     df['Status_Clean'] = df['Status'].astype(str).str.strip().str.lower()
     hoje = pd.to_datetime(date.today())
     
-    # 1. Alerta de Deadline Vencido (Piscando para todos)
+    # 1. Alerta de Deadline Vencido (Piscando)
     df_cot_atrasadas = df[df['Status_Clean'].str.contains("cotação enviada", na=False)].copy()
     if not df_cot_atrasadas.empty:
         df_cot_atrasadas['Deadline_Dt'] = pd.to_datetime(df_cot_atrasadas['Deadline'], format='%d/%m/%Y', errors='coerce')
@@ -162,7 +162,7 @@ if not df.empty:
         if len(atrasados) > 0:
             st.markdown(f'<div class="alerta-piscando">🚨 ATENÇÃO: Existem <b>{len(atrasados)}</b> cotações com o DEADLINE VENCIDO!</div>', unsafe_allow_html=True)
 
-    # 2. Alerta de Sem Tratativa > 2 dias úteis (Piscando para TODOS os perfis)
+    # 2. Alerta de Sem Tratativa > 2 dias úteis (Piscando)
     df_sem_tratativa = df[df['Status_Clean'].str.contains("enviado", na=False)].copy()
     if not df_sem_tratativa.empty:
         df_sem_tratativa['Envio_Dt'] = pd.to_datetime(df_sem_tratativa['Data Envio'], format='%d/%m/%Y', errors='coerce')
@@ -412,11 +412,27 @@ elif menu == "👀 Follow-up":
                 st.info("Nenhuma cotação em aberto.")
                 
         with t3:
-            st.subheader("Histórico de Grupos Confirmados")
+            st.subheader("🗓️ Grupos Confirmados por Mês/Ano de Check-in")
             df_conf = df[df['Status_Clean'].str.contains("confirmado", na=False)].copy()
             
             if not df_conf.empty:
-                st.dataframe(df_conf[['Check-in', 'Check-out', 'Empresa', 'Receita Total']], use_container_width=True)
+                # Converte o Check-in para data e extrai o Mês/Ano (ex: 2026-08)
+                df_conf['Checkin_Date'] = pd.to_datetime(df_conf['Check-in'], format='%d/%m/%Y', errors='coerce')
+                df_conf['Mes_Ano'] = df_conf['Checkin_Date'].dt.to_period('M').astype(str)
+                
+                meses_confirmados = sorted(df_conf['Mes_Ano'].dropna().unique().tolist())
+                
+                if meses_confirmados:
+                    filtro_mes = st.selectbox("Selecione o Mês do Check-in:", ["Todos os Meses"] + meses_confirmados)
+                    
+                    if filtro_mes != "Todos os Meses":
+                        df_conf_filtrado = df_conf[df_conf['Mes_Ano'] == filtro_mes]
+                    else:
+                        df_conf_filtrado = df_conf
+                        
+                    st.dataframe(df_conf_filtrado[['Check-in', 'Check-out', 'Empresa', 'Total RN Single', 'Total RN Duplo', 'Total RN Triplo', 'Receita Total']], use_container_width=True)
+                else:
+                    st.info("Não há datas de check-in válidas nos grupos confirmados.")
             else:
                 st.info("Nenhum grupo confirmado ainda.")
 
