@@ -4,22 +4,28 @@ from datetime import date, datetime, timedelta
 import gspread
 from google.oauth2.service_account import Credentials
 import altair as alt
+import json
 
 st.set_page_config(page_title="CRM Grupos", page_icon="🏨", layout="wide")
 
 URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1_vvU_tgDtHCqtoKG4xR5XMfmnujGTXf7pndgg_aQoX0/edit?gid=0#gid=0"
 
-@st.cache_resource(ttl=60) 
-def conectar_planilha():
+@st.cache_resource(ttl=30) 
+def conectar_planilhas():
     credenciais = dict(st.secrets["gcp_service_account"])
     escopos = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
     creds = Credentials.from_service_account_info(credenciais, scopes=escopos)
     cliente = gspread.authorize(creds)
-    aba = cliente.open_by_url(URL_PLANILHA).sheet1
-    return aba
+    
+    planilha = cliente.open_by_url(URL_PLANILHA)
+    aba_dados = planilha.worksheet("Dados")
+    aba_usuarios = planilha.worksheet("Usuarios")
+    return aba_dados, aba_usuarios
 
 try:
-    aba_dados = conectar_planilha()
+    aba_dados, aba_usuarios = conectar_planilhas()
+    
+    # Carrega Dados
     dados_planilha = aba_dados.get_all_records(expected_headers=[
         'ID', 'Data Envio', 'Empresa', 'Contato', 'E-mail', 'Telefone', 
         'Check-in', 'Check-out', 'Total RN Single', 'Total RN Duplo', 'Total RN Triplo', 
@@ -29,49 +35,128 @@ try:
     df = pd.DataFrame(dados_planilha)
     if not df.empty:
         df.columns = df.columns.str.strip()
+        
+    # Carrega Usuários
+    usuarios_data = aba_usuarios.get_all_records(expected_headers=['Usuario', 'Senha', 'Perfil', 'Primeiro Acesso'])
+    df_usuarios = pd.DataFrame(usuarios_data)
+    if not df_usuarios.empty:
+        df_usuarios.columns = df_usuarios.columns.str.strip()
+        
+        # Se a aba estiver vazia, cria os usuários padrão iniciais
+        if len(df_usuarios) == 0:
+            usuarios_iniciais = [
+                ["Amanda", "mudar@123", "Hotel", "Sim"],
+                ["Italo", "mudar@123", "Hotel", "Sim"],
+                ["Amanda Rolim", "mudar@123", "Vendas", "Sim"],
+                ["Rafaella", "mudar@123", "Vendas", "Sim"],
+                ["Elton", "mudar@123", "Vendas", "Sim"],
+                ["Catarina", "mudar@123", "Gerencial", "Sim"],
+                ["Kessia", "mudar@123", "Gerencial", "Sim"],
+                ["Cecilia", "mudar@123", "Gerencial", "Sim"],
+            ]
+            for u in usuarios_iniciais:
+                aba_usuarios.append_row(u)
+            df_usuarios = pd.DataFrame(usuarios_iniciais, columns=['Usuario', 'Senha', 'Perfil', 'Primeiro Acesso'])
+            
 except Exception as e:
-    st.error(f"Erro ao conectar com o banco de dados: {e}")
+    st.error(f"Erro ao conectar com as abas do Google Sheets: {e}")
     st.stop()
 
 # ------------------------------------------------
-# Sistema de Login Simples
+# Sistema de Login e Troca de Senha Obrigatória
 # ------------------------------------------------
 if "logado" not in st.session_state:
     st.session_state["logado"] = False
+    st.session_state["usuario"] = ""
     st.session_state["perfil"] = ""
+    st.session_state["mudar_senha"] = False
 
 if not st.session_state["logado"]:
     st.title("🔐 Acesso ao Sistema de Grupos")
-    senha = st.text_input("Digite sua senha de acesso", type="password")
+    
+    usuario_input = st.selectbox("Selecione seu Nome de Usuário", [""] + df_usuarios['Usuario'].tolist())
+    senha_input = st.text_input("Senha", type="password")
     
     if st.button("Entrar", type="primary"):
-        if senha == "hotel123":
-            st.session_state["logado"] = True
-            st.session_state["perfil"] = "Hotel"
-            st.rerun()
-        elif senha == "vendas123":
-            st.session_state["logado"] = True
-            st.session_state["perfil"] = "Vendas"
-            st.rerun()
-        elif senha == "gerente123":
-            st.session_state["logado"] = True
-            st.session_state["perfil"] = "Gerencial"
-            st.rerun()
+        if usuario_input == "":
+            st.warning("Selecione um usuário.")
         else:
-            st.error("Senha incorreta!")
-    st.stop() 
+            user_row = df_usuarios[df_usuarios['Usuario'] == usuario_input].iloc[0]
+            senha_cadastrada = str(user_row['Senha']).strip()
+            
+            if senha_input == senha_cadastrada:
+                st.session_state["logado"] = True
+                st.session_state["usuario"] = usuario_input
+                st.session_state["perfil"] = str(user_row['Perfil']).strip()
+                
+                if str(user_row['Primeiro Acesso']).strip() == "Sim" or senha_cadastrada == "mudar@123":
+                    st.session_state["mudar_senha"] = True
+                st.rerun()
+            else:
+                st.error("Senha incorreta!")
+    st.stop()
+
+# Tela de Redefinição Obrigatória de Senha
+if st.session_state["mudar_senha"]:
+    st.title("🔑 Redefinição de Senha Obrigatória")
+    st.warning("Detectamos que você está usando uma senha padrão ou temporária. Por favor, crie sua nova senha pessoal para continuar.")
+    
+    with st.form("form_nova_senha"):
+        nova_senha1 = st.text_input("Nova Senha", type="password")
+        nova_senha2 = st.text_input("Confirme a Nova Senha", type="password")
+        btn_trocar = st.form_submit_button("Salvar Nova Senha", type="primary")
+        
+        if btn_trocar:
+            if nova_senha1 == "" or nova_senha1 != nova_senha2:
+                st.error("As senhas não coincidem ou estão em branco.")
+            elif nova_senha1 == "mudar@123":
+                st.error("Escolha uma senha diferente da padrão.")
+            else:
+                idx = df_usuarios[df_usuarios['Usuario'] == st.session_state["usuario"]].index[0] + 2
+                aba_usuarios.update_cell(idx, 2, nova_senha1) 
+                aba_usuarios.update_cell(idx, 4, "Não") 
+                
+                st.success("Senha alterada com sucesso! Entrando no sistema...")
+                st.session_state["mudar_senha"] = False
+                st.cache_resource.clear()
+                st.rerun()
+    st.stop()
 
 st.sidebar.button("Sair (Logout)", on_click=lambda: st.session_state.clear())
 
 # ------------------------------------------------
-# Controle de Permissões (Menu)
+# Alertas Automáticos (Pop-ups)
+# ------------------------------------------------
+if not df.empty:
+    df['Status_Clean'] = df['Status'].astype(str).str.strip().str.lower()
+    hoje = pd.to_datetime(date.today())
+    
+    df_cot_atrasadas = df[df['Status_Clean'].str.contains("cotação enviada", na=False)].copy()
+    if not df_cot_atrasadas.empty:
+        df_cot_atrasadas['Deadline_Dt'] = pd.to_datetime(df_cot_atrasadas['Deadline'], format='%d/%m/%Y', errors='coerce')
+        atrasados = df_cot_atrasadas[df_cot_atrasadas['Deadline_Dt'] < hoje]
+        if len(atrasados) > 0 and st.session_state["perfil"] in ["Gerencial", "Vendas", "Hotel"]:
+            st.error(f"🚨 **ATENÇÃO:** Existem **{len(atrasados)}** cotações com o **Deadline Vencido**!")
+
+    if st.session_state["perfil"] == "Vendas":
+        df_sem_tratativa = df[df['Status_Clean'].str.contains("enviado", na=False)].copy()
+        if not df_sem_tratativa.empty:
+            df_sem_tratativa['Envio_Dt'] = pd.to_datetime(df_sem_tratativa['Data Envio'], format='%d/%m/%Y', errors='coerce')
+            atraso_vendas = df_sem_tratativa[(hoje - df_sem_tratativa['Envio_Dt']).dt.days >= 3]
+            if len(atraso_vendas) > 0:
+                st.warning(f"⚠️ **Aviso Comercial:** Há **{len(atraso_vendas)}** solicitações sem tratativa há mais de 2 dias úteis!")
+
+# ------------------------------------------------
+# Menu Lateral por Perfil
 # ------------------------------------------------
 perfil = st.session_state["perfil"]
-st.sidebar.title(f"🏨 Menu ({perfil})")
+usuario_atual = st.session_state["usuario"]
+st.sidebar.title(f"🏨 Olá, {usuario_atual}")
+st.sidebar.caption(f"Perfil: {perfil}")
 
 opcoes_menu = []
 if perfil == "Gerencial":
-    opcoes_menu = ["📊 Dashboard", "🛎️ Nova Solicitação", "💼 Gestão de Vendas", "👀 Follow-up"]
+    opcoes_menu = ["📊 Dashboard", "🛎️ Nova Solicitação", "💼 Gestão de Vendas", "👀 Follow-up", "⚙️ Gerenciar Usuários"]
 elif perfil == "Hotel":
     opcoes_menu = ["🛎️ Nova Solicitação", "👀 Follow-up"]
 elif perfil == "Vendas":
@@ -96,9 +181,9 @@ if menu == "📊 Dashboard":
 
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("📌 Leads Recebidos", len(df_dash))
-        col2.metric("📤 Propostas Enviadas", len(df_dash[df_dash['Status'].astype(str).str.contains("cotação enviada", case=False, na=False)]))
-        col3.metric("✅ Confirmados", len(df_dash[df_dash['Status'].astype(str).str.contains("confirmado", case=False, na=False)]))
-        col4.metric("❌ Recusados", len(df_dash[df_dash['Status'].astype(str).str.contains("recusado", case=False, na=False)]))
+        col2.metric("📤 Propostas Enviadas", len(df_dash[df_dash['Status_Clean'].str.contains("cotação enviada", na=False)]))
+        col3.metric("✅ Confirmados", len(df_dash[df_dash['Status_Clean'].str.contains("confirmado", na=False)]))
+        col4.metric("❌ Recusados", len(df_dash[df_dash['Status_Clean'].str.contains("recusado", na=False)]))
         
         st.markdown("---")
         c1, c2 = st.columns(2)
@@ -109,7 +194,7 @@ if menu == "📊 Dashboard":
             st.altair_chart(grafico_barras, use_container_width=True)
             
         with c2:
-            df_recusados = df_dash[df_dash['Status'].astype(str).str.contains("recusado", case=False, na=False)]
+            df_recusados = df_dash[df_dash['Status_Clean'].str.contains("recusado", na=False)]
             if not df_recusados.empty:
                 motivos = df_recusados['Motivo Recusa'].value_counts().reset_index()
                 motivos.columns = ['Motivo', 'Quantidade']
@@ -159,27 +244,11 @@ elif menu == "🛎️ Nova Solicitação":
                 id_unico = "G-" + datetime.now().strftime("%Y%m%d%H%M")
                 mapa_str = df_editado.to_json(orient='records')
                 
-                # ORDEM EXATA DOS 19 CAMPOS CORRESPONDENDO ÀS COLUNAS DE A ATÉ S:
                 nova_linha = [
-                    id_unico, 
-                    datetime.now().strftime("%d/%m/%Y"), 
-                    empresa, 
-                    contato, 
-                    email, 
-                    telefone, 
-                    checkin.strftime("%d/%m/%Y"), 
-                    checkout.strftime("%d/%m/%Y"), 
-                    tot_sin, 
-                    tot_dup, 
-                    tot_tri, 
-                    0, # Tarifa Single 
-                    0, # Tarifa Duplo 
-                    0, # Tarifa Triplo 
-                    0, # Receita Total 
-                    "Enviado para time de vendas", # Status (Cai exatamente na coluna correta)
-                    "", # Deadline
-                    "", # Motivo Recusa
-                    mapa_str # Mapa de Quartos
+                    id_unico, datetime.now().strftime("%d/%m/%Y"), empresa, contato, email, telefone, 
+                    checkin.strftime("%d/%m/%Y"), checkout.strftime("%d/%m/%Y"), 
+                    tot_sin, tot_dup, tot_tri, 0, 0, 0, 0, 
+                    "Enviado para time de vendas", "", "", mapa_str
                 ]
                 aba_dados.append_row(nova_linha)
                 st.success("✅ Grupo registrado! A equipe de vendas já pode definir as tarifas.")
@@ -196,23 +265,42 @@ elif menu == "💼 Gestão de Vendas":
     if df.empty:
         st.warning("Não há grupos.")
     else:
-        df['Status_Clean'] = df['Status'].astype(str).str.strip().str.lower()
         df_pendentes = df[~df['Status_Clean'].isin(['confirmado', 'recusado'])]
         
         if df_pendentes.empty:
             st.success("Nenhum grupo pendente no momento!")
         else:
             opcoes = df_pendentes['ID'].astype(str) + " - " + df_pendentes['Empresa'] + " (" + df_pendentes['Status'] + ")"
-            grupo_sel = st.selectbox("Escolha o Grupo:", opcoes)
+            grupo_sel = st.selectbox("Escolha o Grupo para tratar:", opcoes)
             
             id_sel = grupo_sel.split(" - ")[0]
             linha_atual = df_pendentes[df_pendentes['ID'] == id_sel].iloc[0]
             
+            st.markdown("---")
+            st.subheader(f"📋 Informações da Solicitação: {linha_atual['Empresa']}")
+            c_info1, c_info2 = st.columns(2)
+            with c_info1:
+                st.markdown(f"**Contato:** {linha_atual['Contato']}")
+                st.markdown(f"**E-mail:** {linha_atual['E-mail']}")
+                st.markdown(f"**Telefone:** {linha_atual['Telefone']}")
+            with c_info2:
+                st.markdown(f"**Data de Envio:** {linha_atual['Data Envio']}")
+                st.markdown(f"**Período:** {linha_atual['Check-in']} até {linha_atual['Check-out']}")
+            
+            mapa_json = linha_atual.get('Mapa de Quartos', '')
+            if mapa_json:
+                try:
+                    mapa_lista = json.loads(mapa_json)
+                    df_mapa = pd.DataFrame(mapa_lista)
+                    st.markdown("**📅 Distribuição Diária de Quartos solicitada pelo Hotel:**")
+                    st.dataframe(df_mapa, hide_index=True, use_container_width=True)
+                except:
+                    pass
+            st.markdown("---")
+
             rn_s = int(linha_atual['Total RN Single'] or 0)
             rn_d = int(linha_atual['Total RN Duplo'] or 0)
             rn_t = int(linha_atual['Total RN Triplo'] or 0)
-            
-            st.info(f"🏨 **Necessidade do Hotel:** {rn_s} Single | {rn_d} Duplo | {rn_t} Triplo")
             
             with st.form("form_vendas"):
                 st.subheader("1. Definição de Tarifas")
@@ -235,9 +323,6 @@ elif menu == "💼 Gestão de Vendas":
                         receita_total = (rn_s * t_single) + (rn_d * t_duplo) + (rn_t * t_triplo)
                         linha_planilha = df[df['ID'] == id_sel].index[0] + 2
                         
-                        # Mapeamento exato das colunas na planilha:
-                        # 12: Tarifa Single | 13: Tarifa Duplo | 14: Tarifa Triplo 
-                        # 15: Receita Total | 16: Status | 17: Deadline | 18: Motivo Recusa
                         aba_dados.update_cell(linha_planilha, 12, t_single)
                         aba_dados.update_cell(linha_planilha, 13, t_duplo)
                         aba_dados.update_cell(linha_planilha, 14, t_triplo)
@@ -266,8 +351,6 @@ elif menu == "👀 Follow-up":
         st.warning("Nenhum dado cadastrado.")
     else:
         t1, t2, t3 = st.tabs(["⚠️ Sem Tratativa (Vendas)", "⏳ Cotações em Aberto", "✅ Confirmados"])
-        
-        df['Status_Clean'] = df['Status'].astype(str).str.strip().str.lower()
         
         with t1:
             st.subheader("Aguardando Precificação / Ação da Comercial")
@@ -298,3 +381,57 @@ elif menu == "👀 Follow-up":
                 st.dataframe(df_conf[['Check-in', 'Check-out', 'Empresa', 'Receita Total']], use_container_width=True)
             else:
                 st.info("Nenhum grupo confirmado ainda.")
+
+# ------------------------------------------------
+# 5. Gerenciar Usuários (Apenas Gerência)
+# ------------------------------------------------
+elif menu == "⚙️ Gerenciar Usuários" and perfil == "Gerencial":
+    st.header("⚙️ Painel de Controle de Usuários")
+    
+    aba_user_tab1, aba_user_tab2 = st.tabs(["📋 Lista e Redefinição de Senha", "➕ Cadastrar / Excluir Usuário"])
+    
+    with aba_user_tab1:
+        st.subheader("Usuários Ativos no Sistema")
+        st.dataframe(df_usuarios[['Usuario', 'Perfil', 'Primeiro Acesso']], use_container_width=True)
+        
+        st.markdown("---")
+        st.subheader("Redefinir Senha para Padrão (mudar@123)")
+        usuario_escolhido = st.selectbox("Selecione o usuário:", df_usuarios['Usuario'].tolist())
+        
+        if st.button("🔄 Resetar Senha", type="primary"):
+            idx_u = df_usuarios[df_usuarios['Usuario'] == usuario_escolhido].index[0] + 2
+            aba_usuarios.update_cell(idx_u, 2, "mudar@123")
+            aba_usuarios.update_cell(idx_u, 4, "Sim") 
+            st.success(f"Senha do usuário **{usuario_escolhido}** redefinida para `mudar@123`!")
+            st.cache_resource.clear()
+
+    with aba_user_tab2:
+        st.subheader("Adicionar Novo Usuário")
+        with st.form("form_novo_usuario"):
+            novo_nome = st.text_input("Nome do Usuário")
+            novo_perfil = st.selectbox("Perfil de Acesso", ["Hotel", "Vendas", "Gerencial"])
+            btn_criar = st.form_submit_button("Criar Usuário", type="primary")
+            
+            if btn_criar:
+                if novo_nome == "":
+                    st.error("O nome do usuário não pode estar em branco.")
+                elif novo_nome in df_usuarios['Usuario'].values:
+                    st.error("Já existe um usuário com esse nome.")
+                else:
+                    # Adiciona com senha padrão e força troca
+                    aba_usuarios.append_row([novo_nome, "mudar@123", novo_perfil, "Sim"])
+                    st.success(f"Usuário **{novo_nome}** criado com sucesso! A senha inicial é `mudar@123`.")
+                    st.cache_resource.clear()
+
+        st.markdown("---")
+        st.subheader("Excluir Usuário")
+        usuario_excluir = st.selectbox("Selecione o usuário para remover:", df_usuarios['Usuario'].tolist(), key="del_user")
+        
+        if st.button("🗑️ Excluir Usuário", type="secondary"):
+            if len(df_usuarios) <= 1:
+                st.error("Você não pode excluir o último usuário restante.")
+            else:
+                idx_del = df_usuarios[df_usuarios['Usuario'] == usuario_excluir].index[0] + 2
+                aba_usuarios.delete_rows(idx_del)
+                st.success(f"Usuário **{usuario_excluir}** excluído com sucesso!")
+                st.cache_resource.clear()
