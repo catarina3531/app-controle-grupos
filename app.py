@@ -190,9 +190,13 @@ if menu == "📊 Dashboard":
         col3.metric("Confirmados", len(df_dash[df_dash['Status'].str.contains("confirmado", case=False, na=False)]))
         col4.metric("Recusados", len(df_dash[df_dash['Status'].str.contains("recusado", case=False, na=False)]))
 
-# 2. Nova Solicitação
+# 2. Nova Solicitação (Com Botão de Limpar Formulário)
 elif menu == "🛎️ Nova Solicitação":
     st.header("🛎️ Enviar Grupo para Vendas")
+    
+    if st.button("🧹 Limpar / Novo Formulário"):
+        st.rerun()
+
     empresa = st.text_input("Empresa / Agência")
     col1, col2, col3 = st.columns(3)
     with col1: contato = st.text_input("Contato")
@@ -224,7 +228,7 @@ elif menu == "🛎️ Nova Solicitação":
                 st.success("✅ Grupo registrado com sucesso!")
                 st.cache_resource.clear()
 
-# 3. Gestão de Vendas & Proposta
+# 3. Gestão de Vendas & Proposta (Com Botão de Limpar Formulário)
 elif menu == "💼 Gestão de Vendas & Propostas":
     st.header("💼 Tratativa, Precificação e Envio de Proposta")
     if perfil not in ["Vendas", "Gerencial"]:
@@ -239,6 +243,9 @@ elif menu == "💼 Gestão de Vendas & Propostas":
             if df_pendentes.empty:
                 st.success("Nenhum grupo pendente no momento!")
             else:
+                if st.button("🧹 Limpar / Novo Formulário"):
+                    st.rerun()
+
                 opcoes = df_pendentes['ID'].astype(str) + " - " + df_pendentes['Empresa'] + " (" + df_pendentes['Status'] + ")"
                 grupo_sel = st.selectbox("Escolha o Grupo para tratar:", opcoes)
                 id_sel = grupo_sel.split(" - ")[0]
@@ -295,13 +302,19 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                 extras_selecionados = st.multiselect("Selecione adicionais:", extras_opcoes)
                 
                 extras_dados = []
+                extras_incompletos = False
+                
                 if extras_selecionados:
                     st.markdown("Preencha os valores para os itens selecionados:")
                     for ext in extras_selecionados:
                         ec1, ec2, ec3 = st.columns([3, 1, 1])
                         with ec1: st.write(f"**{ext}**")
-                        with ec2: q_ext = st.number_input(f"Qtd ({ext})", min_value=1, value=1, key=f"q_{ext}")
-                        with ec3: v_ext = st.number_input(f"Valor Unit. R$ ({ext})", min_value=0.0, value=50.0, step=5.0, key=f"v_{ext}")
+                        with ec2: q_ext = st.number_input(f"Qtd ({ext})", min_value=0, value=0, key=f"q_{ext}")
+                        with ec3: v_ext = st.number_input(f"Valor Unit. R$ ({ext})", min_value=0.0, value=0.0, step=5.0, key=f"v_{ext}")
+                        
+                        if q_ext <= 0 or v_ext <= 0.0:
+                            extras_incompletos = True
+                        
                         extras_dados.append({"Item": ext, "Qtd": q_ext, "Valor": v_ext, "Subtotal": q_ext * v_ext})
 
                 st.subheader("4. Descrição Livre / Cardápio / Observações")
@@ -312,76 +325,79 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                 novo_deadline = st.date_input("Deadline", value=date.today())
                 
                 if st.button("💾 Salvar e Gerar Link da Proposta", type="primary"):
-                    receita_hospedagem = (rn_s * t_single) + (rn_d * t_duplo) + (rn_t * t_triplo)
-                    receita_extras = sum([item["Subtotal"] for item in extras_dados])
-                    receita_total = receita_hospedagem + receita_extras
-                    
-                    linha_planilha = df[df['ID'] == id_sel].index[0] + 2
-                    aba_dados.update_cell(linha_planilha, 12, t_single)
-                    aba_dados.update_cell(linha_planilha, 13, t_duplo)
-                    aba_dados.update_cell(linha_planilha, 14, t_triplo)
-                    aba_dados.update_cell(linha_planilha, 15, receita_total)
-                    aba_dados.update_cell(linha_planilha, 16, novo_status)
-                    aba_dados.update_cell(linha_planilha, 17, novo_deadline.strftime("%d/%m/%Y") if novo_status == "Cotação enviada" else "")
-                    
-                    tabela_html = ""
-                    if tipologias_selecionadas:
-                        tabela_html += "<h4>Tipologias de Apartamentos Oferecidas:</h4><ul>"
-                        for tp in tipologias_selecionadas:
-                            tabela_html += f"<li><b>{tp}</b></li>"
-                        tabela_html += "</ul><br>"
+                    if extras_incompletos:
+                        st.error("⚠️ Atenção: Há produtos/serviços extras selecionados sem quantidade ou valor unitário preenchido (> 0). Por favor, precifique todos os extras antes de gerar a proposta.")
+                    else:
+                        receita_hospedagem = (rn_s * t_single) + (rn_d * t_duplo) + (rn_t * t_triplo)
+                        receita_extras = sum([item["Subtotal"] for item in extras_dados])
+                        receita_total = receita_hospedagem + receita_extras
+                        
+                        linha_planilha = df[df['ID'] == id_sel].index[0] + 2
+                        aba_dados.update_cell(linha_planilha, 12, t_single)
+                        aba_dados.update_cell(linha_planilha, 13, t_duplo)
+                        aba_dados.update_cell(linha_planilha, 14, t_triplo)
+                        aba_dados.update_cell(linha_planilha, 15, receita_total)
+                        aba_dados.update_cell(linha_planilha, 16, novo_status)
+                        aba_dados.update_cell(linha_planilha, 17, novo_deadline.strftime("%d/%m/%Y") if novo_status == "Cotação enviada" else "")
+                        
+                        tabela_html = ""
+                        if tipologias_selecionadas:
+                            tabela_html += "<h4>Tipologias de Apartamentos Oferecidas:</h4><ul>"
+                            for tp in tipologias_selecionadas:
+                                tabela_html += f"<li><b>{tp}</b></li>"
+                            tabela_html += "</ul><br>"
 
-                    tabela_html += "<h4>Discriminação de Valores (Com ISS 5%):</h4>"
-                    tabela_html += "<table><tr><th>Serviço / Acomodação</th><th>Qtd / RN</th><th>Valor Unit. NET</th><th>Subtotal (com ISS 5%)</th></tr>"
-                    
-                    if rn_s > 0 and t_single > 0: 
-                        tabela_html += f"<tr><td>Diária Single</td><td>{rn_s}</td><td>R$ {t_single:.2f}</td><td>R$ {(rn_s * t_single * 1.05):.2f}</td></tr>"
-                    if rn_d > 0 and t_duplo > 0: 
-                        tabela_html += f"<tr><td>Diária Dupla</td><td>{rn_d}</td><td>R$ {t_duplo:.2f}</td><td>R$ {(rn_d * t_duplo * 1.05):.2f}</td></tr>"
-                    if rn_t > 0 and t_triplo > 0: 
-                        tabela_html += f"<tr><td>Diária Tripla</td><td>{rn_t}</td><td>R$ {t_triplo:.2f}</td><td>R$ {(rn_t * t_triplo * 1.05):.2f}</td></tr>"
-                    
-                    for ex in extras_dados:
-                        tabela_html += f"<tr><td>{ex['Item']}</td><td>{ex['Qtd']}</td><td>R$ {ex['Valor']:.2f}</td><td>R$ {ex['Subtotal']:.2f}</td></tr>"
-                    tabela_html += "</table>"
+                        tabela_html += "<h4>Discriminação de Valores (Com ISS 5%):</h4>"
+                        tabela_html += "<table><tr><th>Serviço / Acomodação</th><th>Qtd / RN</th><th>Valor Unit. NET</th><th>Subtotal (com ISS 5%)</th></tr>"
+                        
+                        if rn_s > 0 and t_single > 0: 
+                            tabela_html += f"<tr><td>Diária Single</td><td>{rn_s}</td><td>R$ {t_single:.2f}</td><td>R$ {(rn_s * t_single * 1.05):.2f}</td></tr>"
+                        if rn_d > 0 and t_duplo > 0: 
+                            tabela_html += f"<tr><td>Diária Dupla</td><td>{rn_d}</td><td>R$ {t_duplo:.2f}</td><td>R$ {(rn_d * t_duplo * 1.05):.2f}</td></tr>"
+                        if rn_t > 0 and t_triplo > 0: 
+                            tabela_html += f"<tr><td>Diária Tripla</td><td>{rn_t}</td><td>R$ {t_triplo:.2f}</td><td>R$ {(rn_t * t_triplo * 1.05):.2f}</td></tr>"
+                        
+                        for ex in extras_dados:
+                            tabela_html += f"<tr><td>{ex['Item']}</td><td>{ex['Qtd']}</td><td>R$ {ex['Valor']:.2f}</td><td>R$ {ex['Subtotal']:.2f}</td></tr>"
+                        tabela_html += "</table>"
 
-                    if descricao_livre.strip():
-                        tabela_html += f"<br><h4>Observações / Cardápio:</h4><p>{descricao_livre.replace(chr(10), '<br>')}</p>"
-                    
-                    id_prop = f"PROP-{id_sel}"
-                    data_hj = datetime.now().strftime("%d/%m/%Y")
-                    link_rastreavel = f"{URL_WEB_APP}?id={id_prop}&nome={linha_atual['Empresa'].replace(' ', '%20')}"
-                    
-                    u_logado = st.session_state.get("usuario", "Equipe")
-                    u_cargo = st.session_state.get("cargo", "Gerente Geral")
-                    u_email = st.session_state.get("email_user", "catarina.costa@accor.com")
-                    u_tel = st.session_state.get("tel_user", "(11) 5085-5699")
+                        if descricao_livre.strip():
+                            tabela_html += f"<br><h4>Observações / Cardápio:</h4><p>{descricao_livre.replace(chr(10), '<br>')}</p>"
+                        
+                        id_prop = f"PROP-{id_sel}"
+                        data_hj = datetime.now().strftime("%d/%m/%Y")
+                        link_rastreavel = f"{URL_WEB_APP}?id={id_prop}&nome={linha_atual['Empresa'].replace(' ', '%20')}"
+                        
+                        u_logado = st.session_state.get("usuario", "Equipe")
+                        u_cargo = st.session_state.get("cargo", "Gerente Geral")
+                        u_email = st.session_state.get("email_user", "catarina.costa@accor.com")
+                        u_tel = st.session_state.get("tel_user", "(11) 5085-5699")
 
-                    propostas_atuais = aba_propostas.get_all_values()
-                    achou = False
-                    for idx_p, p_row in enumerate(propostas_atuais[1:], start=2):
-                        if p_row[0] == id_prop:
-                            aba_propostas.update(f'A{idx_p}:N{idx_p}', [[
+                        propostas_atuais = aba_propostas.get_all_values()
+                        achou = False
+                        for idx_p, p_row in enumerate(propostas_atuais[1:], start=2):
+                            if p_row[0] == id_prop:
+                                aba_propostas.update(f'A{idx_p}:N{idx_p}', [[
+                                    id_prop, linha_atual['Empresa'], linha_atual['E-mail'], tabela_html, 
+                                    f"{receita_total * 1.05:,.2f}", novo_status, "", data_hj, "",
+                                    u_logado, u_cargo, u_email, u_tel, link_rastreavel
+                                ]])
+                                achou = True
+                                break
+                        
+                        if not achou:
+                            aba_propostas.append_row([
                                 id_prop, linha_atual['Empresa'], linha_atual['E-mail'], tabela_html, 
                                 f"{receita_total * 1.05:,.2f}", novo_status, "", data_hj, "",
                                 u_logado, u_cargo, u_email, u_tel, link_rastreavel
-                            ]])
-                            achou = True
-                            break
-                    
-                    if not achou:
-                        aba_propostas.append_row([
-                            id_prop, linha_atual['Empresa'], linha_atual['E-mail'], tabela_html, 
-                            f"{receita_total * 1.05:,.2f}", novo_status, "", data_hj, "",
-                            u_logado, u_cargo, u_email, u_tel, link_rastreavel
-                        ])
-                    
-                    st.success(f"✅ Proposta gerada/atualizada com sucesso! Valor Total com ISS: R$ {(receita_total * 1.05):,.2f}")
-                    st.markdown("### 🔗 Link Inteligente para Envio:")
-                    st.code(link_rastreavel)
-                    st.cache_resource.clear()
+                            ])
+                        
+                        st.success(f"✅ Proposta gerada/atualizada com sucesso! Valor Total com ISS: R$ {(receita_total * 1.05):,.2f}")
+                        st.markdown("### 🔗 Link Inteligente para Envio:")
+                        st.code(link_rastreavel)
+                        st.cache_resource.clear()
 
-# 4. Acompanhamento de Propostas (Garante o link mesmo para propostas antigas)
+# 4. Acompanhamento de Propostas
 elif menu == "📑 Acompanhamento de Propostas":
     st.header("📑 Acompanhamento e Reenvio de Propostas")
     if df_propostas.empty:
@@ -411,7 +427,6 @@ elif menu == "📑 Acompanhamento de Propostas":
                 id_p = row.get('ID_Proposta', '')
                 cliente_p = row.get('Cliente', 'Cliente')
                 
-                # Reconstrói o link automaticamente se a coluna estiver em branco ou indisponível
                 link_proposta = row.get('Link_Proposta', '')
                 if not link_proposta or str(link_proposta).strip() == "" or str(link_proposta).lower() == "nan":
                     link_proposta = f"{URL_WEB_APP}?id={id_p}&nome={str(cliente_p).replace(' ', '%20')}"
