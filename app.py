@@ -102,6 +102,9 @@ if "logado" not in st.session_state:
     st.session_state["logado"] = False
     st.session_state["usuario"] = ""
     st.session_state["perfil"] = ""
+    st.session_state["cargo"] = ""
+    st.session_state["email_user"] = ""
+    st.session_state["tel_user"] = ""
     st.session_state["mudar_senha"] = False
 
 if not st.session_state["logado"]:
@@ -290,7 +293,6 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         aba_dados.update_cell(linha_planilha, 16, novo_status)
                         aba_dados.update_cell(linha_planilha, 17, novo_deadline.strftime("%d/%m/%Y") if novo_status == "Cotação enviada" else "")
                         
-                        # Monta a tabela HTML limpa para a proposta
                         tabela_html = "<table><tr><th>Serviço / Acomodação</th><th>Qtd / RN</th><th>Valor Unit.</th><th>Subtotal (com ISS 5%)</th></tr>"
                         if rn_s > 0: tabela_html += f"<tr><td>Diária Single</td><td>{rn_s}</td><td>R$ {t_single:.2f}</td><td>R$ {(rn_s * t_single * 1.05):.2f}</td></tr>"
                         if rn_d > 0: tabela_html += f"<tr><td>Diária Dupla</td><td>{rn_d}</td><td>R$ {t_duplo:.2f}</td><td>R$ {(rn_d * t_duplo * 1.05):.2f}</td></tr>"
@@ -349,7 +351,30 @@ elif menu == "👀 Follow-up":
         with t3:
             st.dataframe(df[df['Status_Clean'].str.contains("confirmado", na=False)][['Check-in', 'Check-out', 'Empresa', 'Receita Total']], use_container_width=True)
 
-# 6. Gerenciar Usuários
+# 6. Gerenciar Usuários (Com Edição de Cargo, E-mail e Telefone)
 elif menu == "⚙️ Gerenciar Usuários" and perfil == "Gerencial":
     st.header("⚙️ Painel de Controle de Usuários")
-    st.dataframe(df_usuarios, use_container_width=True)
+    
+    tab_u1, tab_u2 = st.tabs(["📋 Usuários Cadastrados", "➕ Adicionar / Editar Perfil"])
+    
+    with tab_u1:
+        st.dataframe(df_usuarios, use_container_width=True)
+        
+    with tab_u2:
+        st.subheader("Cadastrar Novo Usuário ou Atualizar Perfil")
+        with st.form("form_cad_usuario"):
+            u_nome = st.text_input("Nome do Usuário")
+            u_senha = st.text_input("Senha Inicial", value="mudar@123")
+            u_perfil = st.selectbox("Perfil de Acesso", ["Hotel", "Vendas", "Gerencial"])
+            u_cargo = st.text_input("Cargo / Função (Ex: Executivo(a) de Contas)", value="Executivo(a) de Contas")
+            u_email = st.text_input("E-mail Corporativo", value="nome@accor.com")
+            u_tel = st.text_input("Telefone / Contato", value="(11) 3016-9000")
+            
+            btn_salvar_user = st.form_submit_button("Salvar Usuário", type="primary")
+            if btn_salvar_user:
+                if not u_nome:
+                    st.error("O nome do usuário é obrigatório.")
+                else:
+                    aba_usuarios.append_row([u_nome, u_senha, u_perfil, "Sim", u_cargo, u_email, u_tel])
+                    st.success(f"✅ Usuário **{u_nome}** cadastrado com sucesso!")
+                    st.cache_resource.clear()
