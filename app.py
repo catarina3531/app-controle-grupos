@@ -122,7 +122,6 @@ if "logado" not in st.session_state:
     st.session_state["tel_user"] = ""
     st.session_state["mudar_senha"] = False
 
-# Controle de Versão para Limpeza de Formulários
 if "form_version" not in st.session_state:
     st.session_state["form_version"] = 0
 
@@ -208,7 +207,7 @@ if menu == "📊 Dashboard":
         col3.metric("Confirmados", len(df_dash[df_dash['Status'].str.contains("confirmado", case=False, na=False)]))
         col4.metric("Recusados", len(df_dash[df_dash['Status'].str.contains("recusado", case=False, na=False)]))
 
-# 2. Nova Solicitação
+# 2. Nova Solicitação (Validação de Mínimo 10 Apartamentos)
 elif menu == "🛎️ Nova Solicitação":
     st.header("🛎️ Enviar Grupo para Vendas")
     
@@ -234,8 +233,12 @@ elif menu == "🛎️ Nova Solicitação":
         df_editado = st.data_editor(df_grid, hide_index=True, use_container_width=True, key=f"grid_quartos_{v}")
         
         if st.button("🚀 Enviar Solicitação para Vendas", type="primary"):
+            total_quartos = int(df_editado["Single"].sum() + df_editado["Duplo"].sum() + df_editado["Triplo"].sum())
+            
             if empresa == "":
                 st.error("O nome da Empresa é obrigatório.")
+            elif total_quartos < 10:
+                st.error(f"⚠️ Solicitação não permitida! O total de apartamentos solicitados é {total_quartos}. Para reservas inferiores a 10 apartamentos, oriente o cliente a consultar diretamente em nosso site: ALL.COM")
             else:
                 id_unico = "G-" + datetime.now().strftime("%Y%m%d%H%M")
                 nova_linha = [
@@ -350,12 +353,12 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                 novo_deadline = st.date_input("Deadline", value=date.today(), key=f"input_deadline_comercial_{v}")
                 
                 if st.button("💾 Salvar e Gerar Link da Proposta", type="primary"):
-                    if extras_incompletos:
+                    if novo_status == "Cotação enviada" and extras_incompletos:
                         st.error("⚠️ Atenção: Há produtos/serviços extras selecionados sem quantidade ou valor unitário preenchido (> 0). Por favor, precifique todos os extras antes de gerar a proposta.")
                     else:
                         receita_hospedagem = (rn_s * t_single) + (rn_d * t_duplo) + (rn_t * t_triplo)
                         receita_extras = sum([item["Subtotal"] for item in extras_dados])
-                        receita_total = receita_hospedagem + receita_extras
+                        receita_total = float(receita_hospedagem + receita_extras)
                         
                         linha_planilha = df[df['ID'] == id_sel].index[0] + 2
                         aba_dados.update_cell(linha_planilha, 12, t_single)
@@ -398,13 +401,15 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         u_email = st.session_state.get("email_user", "catarina.costa@accor.com")
                         u_tel = st.session_state.get("tel_user", "(11) 5085-5699")
 
+                        valor_total_formatado = f"{receita_total * 1.05:,.2f}"
+
                         propostas_atuais = aba_propostas.get_all_values()
                         achou = False
                         for idx_p, p_row in enumerate(propostas_atuais[1:], start=2):
                             if p_row[0] == id_prop:
                                 aba_propostas.update(f'A{idx_p}:N{idx_p}', [[
                                     id_prop, linha_atual['Empresa'], linha_atual['E-mail'], tabela_html, 
-                                    f"{receita_total * 1.05:,.2f}", novo_status, "", data_hj, "",
+                                    valor_total_formatado, novo_status, "", data_hj, "",
                                     u_logado, u_cargo, u_email, u_tel, link_rastreavel
                                 ]])
                                 achou = True
@@ -413,13 +418,14 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         if not achou:
                             aba_propostas.append_row([
                                 id_prop, linha_atual['Empresa'], linha_atual['E-mail'], tabela_html, 
-                                f"{receita_total * 1.05:,.2f}", novo_status, "", data_hj, "",
+                                valor_total_formatado, novo_status, "", data_hj, "",
                                 u_logado, u_cargo, u_email, u_tel, link_rastreavel
                             ])
                         
-                        st.success(f"✅ Proposta gerada/atualizada com sucesso! Valor Total com ISS: R$ {(receita_total * 1.05):,.2f}")
-                        st.markdown("### 🔗 Link Inteligente para Envio:")
-                        st.code(link_rastreavel)
+                        st.success(f"✅ Proposta gerada/atualizada com sucesso! Status: {novo_status}")
+                        if novo_status == "Cotação enviada":
+                            st.markdown("### 🔗 Link Inteligente para Envio:")
+                            st.code(link_rastreavel)
                         st.cache_resource.clear()
                         st.cache_data.clear()
                         st.session_state["form_version"] += 1
