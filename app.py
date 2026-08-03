@@ -46,8 +46,8 @@ def conectar_planilhas():
     try:
         aba_propostas = planilha.worksheet("Propostas")
     except:
-        aba_propostas = planilha.add_worksheet(title="Propostas", rows=100, cols=10)
-        aba_propostas.append_row(['ID_Proposta', 'Cliente', 'Email', 'Produtos_Contratados', 'Valor_Total', 'Status', 'Observacoes', 'Data_Criacao', 'Ultimo_Acesso'])
+        aba_propostas = planilha.add_worksheet(title="Propostas", rows=100, cols=13)
+        aba_propostas.append_row(['ID_Proposta', 'Cliente', 'Email', 'Produtos_Contratados', 'Valor_Total', 'Status', 'Observacoes', 'Data_Criacao', 'Ultimo_Acesso', 'Nome_Usuario', 'Cargo_Usuario', 'Email_Usuario', 'Tel_Usuario'])
 
     return aba_dados, aba_usuarios, aba_propostas
 
@@ -64,7 +64,6 @@ try:
     if not df.empty:
         df.columns = df.columns.str.strip()
         
-    # Carrega dados da aba Propostas para o painel de acompanhamento
     propostas_valores = aba_propostas.get_all_values()
     if len(propostas_valores) > 1:
         df_propostas = pd.DataFrame(propostas_valores[1:], columns=propostas_valores[0])
@@ -74,26 +73,25 @@ try:
     todos_valores_user = aba_usuarios.get_all_values()
     if len(todos_valores_user) <= 1:
         if len(todos_valores_user) == 0:
-            aba_usuarios.append_row(['Usuario', 'Senha', 'Perfil', 'Primeiro Acesso'])
+            aba_usuarios.append_row(['Usuario', 'Senha', 'Perfil', 'Primeiro Acesso', 'Cargo', 'Email', 'Telefone'])
             
         usuarios_iniciais = [
-            ["Amanda", "mudar@123", "Hotel", "Sim"],
-            ["Italo", "mudar@123", "Hotel", "Sim"],
-            ["Amanda Rolim", "mudar@123", "Vendas", "Sim"],
-            ["Rafaella", "mudar@123", "Vendas", "Sim"],
-            ["Elton", "mudar@123", "Vendas", "Sim"],
-            ["Catarina", "mudar@123", "Gerencial", "Sim"],
-            ["Kessia", "mudar@123", "Gerencial", "Sim"],
-            ["Cecilia", "mudar@123", "Gerencial", "Sim"],
+            ["Amanda", "mudar@123", "Hotel", "Sim", "Recepcionista / Reservas", "amanda@accor.com", "(11) 3016-9000"],
+            ["Italo", "mudar@123", "Hotel", "Sim", "Analista de Reservas", "italo@accor.com", "(11) 3016-9000"],
+            ["Amanda Rolim", "mudar@123", "Vendas", "Sim", "Executiva de Contas", "amanda.rolim@accor.com", "(11) 3016-9000"],
+            ["Rafaella", "mudar@123", "Vendas", "Sim", "Executiva de Contas", "rafaella@accor.com", "(11) 3016-9000"],
+            ["Elton", "mudar@123", "Vendas", "Sim", "Gerente de Contas", "elton@accor.com", "(11) 3016-9000"],
+            ["Catarina", "mudar@123", "Gerencial", "Sim", "Gerente Geral", "catarina.costa@accor.com", "(11) 3016-9000"],
+            ["Kessia", "mudar@123", "Gerencial", "Sim", "Gerente de Vendas", "kessia@accor.com", "(11) 3016-9000"],
+            ["Cecilia", "mudar@123", "Gerencial", "Sim", "Coordenadora", "cecilia@accor.com", "(11) 3016-9000"],
         ]
         for u in usuarios_iniciais:
             aba_usuarios.append_row(u)
         todos_valores_user = aba_usuarios.get_all_values()
 
-    header = todos_valores_user[0]
+    header = [h.strip() for h in todos_valores_user[0]]
     rows = todos_valores_user[1:]
     df_usuarios = pd.DataFrame(rows, columns=header)
-    df_usuarios.columns = df_usuarios.columns.str.strip()
             
 except Exception as e:
     st.error(f"Erro ao conectar com as abas do Google Sheets: {e}")
@@ -122,6 +120,10 @@ if not st.session_state["logado"]:
                 st.session_state["logado"] = True
                 st.session_state["usuario"] = usuario_input
                 st.session_state["perfil"] = str(user_row['Perfil']).strip()
+                st.session_state["cargo"] = str(user_row.get('Cargo', 'Executivo(a) de Contas')).strip()
+                st.session_state["email_user"] = str(user_row.get('Email', 'catarina.costa@accor.com')).strip()
+                st.session_state["tel_user"] = str(user_row.get('Telefone', '(11) 3016-9000')).strip()
+                
                 if str(user_row['Primeiro Acesso']).strip() == "Sim" or senha_cadastrada == "mudar@123":
                     st.session_state["mudar_senha"] = True
                 st.rerun()
@@ -269,7 +271,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                             with ec1: st.write(f"**{ext}**")
                             with ec2: q_ext = st.number_input(f"Qtd ({ext})", min_value=1, value=1, key=f"q_{ext}")
                             with ec3: v_ext = st.number_input(f"Valor Unit. R$ ({ext})", min_value=0.0, value=50.0, step=5.0, key=f"v_{ext}")
-                            extras_dados.append({"Item": ext, "Qtd": q_ext, "Subtotal": q_ext * v_ext})
+                            extras_dados.append({"Item": ext, "Qtd": q_ext, "Valor": v_ext, "Subtotal": q_ext * v_ext})
 
                     st.subheader("4. Status Comercial")
                     novo_status = st.radio("Status:", ["Cotação enviada", "Confirmado", "Recusado"], horizontal=True)
@@ -288,34 +290,34 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         aba_dados.update_cell(linha_planilha, 16, novo_status)
                         aba_dados.update_cell(linha_planilha, 17, novo_deadline.strftime("%d/%m/%Y") if novo_status == "Cotação enviada" else "")
                         
-                        resumo_partes = []
-                        if tipologias_selecionadas:
-                            resumo_partes.append("<b>TIPOLOGIAS OFERECIDAS:</b><br>" + "<br>".join([f"• {t}" for t in tipologias_selecionadas]))
+                        # Monta a tabela HTML limpa para a proposta
+                        tabela_html = "<table><tr><th>Serviço / Acomodação</th><th>Qtd / RN</th><th>Valor Unit.</th><th>Subtotal (com ISS 5%)</th></tr>"
+                        if rn_s > 0: tabela_html += f"<tr><td>Diária Single</td><td>{rn_s}</td><td>R$ {t_single:.2f}</td><td>R$ {(rn_s * t_single * 1.05):.2f}</td></tr>"
+                        if rn_d > 0: tabela_html += f"<tr><td>Diária Dupla</td><td>{rn_d}</td><td>R$ {t_duplo:.2f}</td><td>R$ {(rn_d * t_duplo * 1.05):.2f}</td></tr>"
+                        if rn_t > 0: tabela_html += f"<tr><td>Diária Tripla</td><td>{rn_t}</td><td>R$ {t_triplo:.2f}</td><td>R$ {(rn_t * t_triplo * 1.05):.2f}</td></tr>"
                         
-                        hosp_partes = []
-                        if rn_s > 0: hosp_partes.append(f"{rn_s}x Diária Single (R$ {t_single:.2f})")
-                        if rn_d > 0: hosp_partes.append(f"{rn_d}x Diária Dupla (R$ {t_duplo:.2f})")
-                        if rn_t > 0: hosp_partes.append(f"{rn_t}x Diária Tripla (R$ {t_triplo:.2f})")
-                        if hosp_partes:
-                            resumo_partes.append("<b>HOSPEDAGEM:</b><br>" + "<br>".join(hosp_partes))
+                        for ex in extras_dados:
+                            tabela_html += f"<tr><td>{ex['Item']}</td><td>{ex['Qtd']}</td><td>R$ {ex['Valor']:.2f}</td><td>R$ {ex['Subtotal']:.2f}</td></tr>"
+                        tabela_html += "</table>"
                         
-                        if extras_dados:
-                            resumo_partes.append("<b>EXTRAS:</b><br>" + "<br>".join([f"{ex['Qtd']}x {ex['Item']} (R$ {ex['Subtotal']:.2f})" for ex in extras_dados]))
-                        
-                        resumo_str = "<br><br>".join(resumo_partes)
                         id_prop = f"PROP-{id_sel}"
+                        data_hj = datetime.now().strftime("%d/%m/%Y")
                         
                         aba_propostas.append_row([
-                            id_prop, linha_atual['Empresa'], linha_atual['E-mail'], resumo_str, 
-                            f"{receita_total:,.2f}", novo_status, "", datetime.now().strftime("%d/%m/%Y"), ""
+                            id_prop, linha_atual['Empresa'], linha_atual['E-mail'], tabela_html, 
+                            f"{receita_total * 1.05:,.2f}", novo_status, "", data_hj, "",
+                            st.session_state.get("usuario", "Equipe"),
+                            st.session_state.get("cargo", "Executivo(a) de Contas"),
+                            st.session_state.get("email_user", "catarina.costa@accor.com"),
+                            st.session_state.get("tel_user", "(11) 3016-9000")
                         ])
                         
-                        st.success(f"✅ Proposta gerada com sucesso! Receita: R$ {receita_total:,.2f}")
+                        st.success(f"✅ Proposta gerada com sucesso! Valor Total com ISS: R$ {(receita_total * 1.05):,.2f}")
                         link_rastreavel = f"{URL_WEB_APP}?id={id_prop}&nome={linha_atual['Empresa'].replace(' ', '%20')}"
                         st.code(link_rastreavel)
                         st.cache_resource.clear()
 
-# 4. Acompanhamento de Propostas (NOVA ABA)
+# 4. Acompanhamento de Propostas
 elif menu == "📑 Acompanhamento de Propostas":
     st.header("📑 Acompanhamento de Propostas Enviadas")
     if df_propostas.empty:
