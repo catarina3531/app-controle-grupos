@@ -351,20 +351,22 @@ elif menu == "👀 Follow-up":
         with t3:
             st.dataframe(df[df['Status_Clean'].str.contains("confirmado", na=False)][['Check-in', 'Check-out', 'Empresa', 'Receita Total']], use_container_width=True)
 
-# 6. Gerenciar Usuários (Com Edição de Cargo, E-mail e Telefone)
+# 6. Gerenciar Usuários (Com Senhas Ocultas)
 elif menu == "⚙️ Gerenciar Usuários" and perfil == "Gerencial":
     st.header("⚙️ Painel de Controle de Usuários")
     
     tab_u1, tab_u2 = st.tabs(["📋 Usuários Cadastrados", "➕ Adicionar / Editar Perfil"])
     
     with tab_u1:
-        st.dataframe(df_usuarios, use_container_width=True)
+        # Exibe a tabela ocultando a coluna de Senhas por segurança
+        colunas_publicas = [c for c in df_usuarios.columns if c.lower() != 'senha']
+        st.dataframe(df_usuarios[colunas_publicas], use_container_width=True)
         
     with tab_u2:
         st.subheader("Cadastrar Novo Usuário ou Atualizar Perfil")
         with st.form("form_cad_usuario"):
             u_nome = st.text_input("Nome do Usuário")
-            u_senha = st.text_input("Senha Inicial", value="mudar@123")
+            u_senha = st.text_input("Senha Inicial", value="mudar@123", type="password")
             u_perfil = st.selectbox("Perfil de Acesso", ["Hotel", "Vendas", "Gerencial"])
             u_cargo = st.text_input("Cargo / Função (Ex: Executivo(a) de Contas)", value="Executivo(a) de Contas")
             u_email = st.text_input("E-mail Corporativo", value="nome@accor.com")
