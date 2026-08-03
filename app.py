@@ -230,7 +230,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
         st.error("🔒 Acesso Restrito!")
     else:
         if df.empty:
-            st.warning("Não há grupos cadastrados.")
+            st.warning("Nenhum grupo cadastrado.")
         else:
             df['Status_Clean'] = df['Status'].astype(str).str.strip().str.lower()
             df_pendentes = df[~df['Status_Clean'].isin(['confirmado', 'recusado'])]
@@ -317,6 +317,13 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         data_hj = datetime.now().strftime("%d/%m/%Y")
                         link_rastreavel = f"{URL_WEB_APP}?id={id_prop}&nome={linha_atual['Empresa'].replace(' ', '%20')}"
                         
+                        # Puxa os dados atualizados direto do session_state do usuário logado
+                        u_logado = st.session_state.get("usuario", "Equipe")
+                        u_cargo = st.session_state.get("cargo", "Executivo(a) de Contas")
+                        u_email = st.session_state.get("email_user", "catarina.costa@accor.com")
+                        u_tel = st.session_state.get("tel_user", "(11) 3016-9000")
+
+                        # Atualiza caso já exista ou insere nova linha na aba Propostas
                         propostas_atuais = aba_propostas.get_all_values()
                         achou = False
                         for idx_p, p_row in enumerate(propostas_atuais[1:], start=2):
@@ -324,11 +331,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                                 aba_propostas.update(f'A{idx_p}:N{idx_p}', [[
                                     id_prop, linha_atual['Empresa'], linha_atual['E-mail'], tabela_html, 
                                     f"{receita_total * 1.05:,.2f}", novo_status, "", data_hj, "",
-                                    st.session_state.get("usuario", "Equipe"),
-                                    st.session_state.get("cargo", "Executivo(a) de Contas"),
-                                    st.session_state.get("email_user", "catarina.costa@accor.com"),
-                                    st.session_state.get("tel_user", "(11) 3016-9000"),
-                                    link_rastreavel
+                                    u_logado, u_cargo, u_email, u_tel, link_rastreavel
                                 ]])
                                 achou = True
                                 break
@@ -337,11 +340,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                             aba_propostas.append_row([
                                 id_prop, linha_atual['Empresa'], linha_atual['E-mail'], tabela_html, 
                                 f"{receita_total * 1.05:,.2f}", novo_status, "", data_hj, "",
-                                st.session_state.get("usuario", "Equipe"),
-                                st.session_state.get("cargo", "Executivo(a) de Contas"),
-                                st.session_state.get("email_user", "catarina.costa@accor.com"),
-                                st.session_state.get("tel_user", "(11) 3016-9000"),
-                                link_rastreavel
+                                u_logado, u_cargo, u_email, u_tel, link_rastreavel
                             ])
                         
                         st.success(f"✅ Proposta gerada/atualizada com sucesso! Valor Total com ISS: R$ {(receita_total * 1.05):,.2f}")
@@ -355,7 +354,6 @@ elif menu == "📑 Acompanhamento de Propostas":
     if df_propostas.empty:
         st.info("Nenhuma proposta registrada até o momento.")
     else:
-        # Cria a coluna de Mês/Ano baseada na Data de Criação da proposta
         df_propostas['Data_Dt'] = pd.to_datetime(df_propostas['Data_Criacao'], format='%d/%m/%Y', errors='coerce')
         df_propostas['Mês/Ano'] = df_propostas['Data_Dt'].dt.to_period('M').astype(str)
         
