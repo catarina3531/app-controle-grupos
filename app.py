@@ -49,7 +49,6 @@ def conectar_planilhas():
         aba_propostas = planilha.add_worksheet(title="Propostas", rows=100, cols=14)
         aba_propostas.append_row(['ID_Proposta', 'Cliente', 'Email', 'Produtos_Contratados', 'Valor_Total', 'Status', 'Observacoes', 'Data_Criacao', 'Ultimo_Acesso', 'Nome_Usuario', 'Cargo_Usuario', 'Email_Usuario', 'Tel_Usuario', 'Link_Proposta'])
 
-    # Garante que a aba Propostas tenha pelo menos 14 colunas para evitar erros de limite
     if aba_propostas.col_count < 14:
         aba_propostas.resize(cols=14)
 
@@ -79,6 +78,11 @@ try:
     df = pd.DataFrame(dados_planilha)
     if not df.empty:
         df.columns = df.columns.str.strip()
+        # Garante a coluna Status_Clean globalmente para evitar Erros no Follow-up
+        if 'Status' in df.columns:
+            df['Status_Clean'] = df['Status'].astype(str).str.strip().str.lower()
+        else:
+            df['Status_Clean'] = ""
         
     propostas_valores = carregar_propostas_cache()
     if len(propostas_valores) > 1:
@@ -207,9 +211,9 @@ if menu == "📊 Dashboard":
 
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Leads Recebidos", len(df_dash))
-        col2.metric("Propostas Enviadas", len(df_dash[df_dash['Status'].str.contains("cotação enviada", case=False, na=False)]))
-        col3.metric("Confirmados", len(df_dash[df_dash['Status'].str.contains("confirmado", case=False, na=False)]))
-        col4.metric("Recusados", len(df_dash[df_dash['Status'].str.contains("recusado", case=False, na=False)]))
+        col2.metric("Propostas Enviadas", len(df_dash[df_dash['Status_Clean'].str.contains("cotação enviada", case=False, na=False)]))
+        col3.metric("Confirmados", len(df_dash[df_dash['Status_Clean'].str.contains("confirmado", case=False, na=False)]))
+        col4.metric("Recusados", len(df_dash[df_dash['Status_Clean'].str.contains("recusado", case=False, na=False)]))
 
 # 2. Nova Solicitação
 elif menu == "🛎️ Nova Solicitação":
@@ -267,7 +271,6 @@ elif menu == "💼 Gestão de Vendas & Propostas":
         if df.empty:
             st.warning("Nenhum grupo cadastrado.")
         else:
-            df['Status_Clean'] = df['Status'].astype(str).str.strip().str.lower()
             df_pendentes = df[~df['Status_Clean'].isin(['confirmado', 'recusado'])]
             
             if df_pendentes.empty:
@@ -379,8 +382,8 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                                 tabela_html += f"<li><b>{tp}</b></li>"
                             tabela_html += "</ul><br>"
 
-                        tabela_html += "<h4>Discriminação de Valores (Com ISS 5%):</h4>"
-                        tabela_html += "<table><tr><th>Serviço / Acomodação</th><th>Qtd / RN</th><th>Valor Unit. NET</th><th>Subtotal (com ISS 5%)</th></tr>"
+                        tabela_html += "<h4>Discriminação da Hospedagem (Com ISS 5%):</h4>"
+                        tabela_html += "<table><tr><th>Acomodação</th><th>Qtd / RN</th><th>Valor Unit. NET</th><th>Subtotal (com ISS 5%)</th></tr>"
                         
                         if rn_s > 0 and t_single > 0: 
                             tabela_html += f"<tr><td>Diária Single</td><td>{rn_s}</td><td>R$ {t_single:.2f}</td><td>R$ {(rn_s * t_single * 1.05):.2f}</td></tr>"
@@ -388,13 +391,17 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                             tabela_html += f"<tr><td>Diária Dupla</td><td>{rn_d}</td><td>R$ {t_duplo:.2f}</td><td>R$ {(rn_d * t_duplo * 1.05):.2f}</td></tr>"
                         if rn_t > 0 and t_triplo > 0: 
                             tabela_html += f"<tr><td>Diária Tripla</td><td>{rn_t}</td><td>R$ {t_triplo:.2f}</td><td>R$ {(rn_t * t_triplo * 1.05):.2f}</td></tr>"
-                        
-                        for ex in extras_dados:
-                            tabela_html += f"<tr><td>{ex['Item']}</td><td>{ex['Qtd']}</td><td>R$ {ex['Valor']:.2f}</td><td>R$ {ex['Subtotal']:.2f}</td></tr>"
                         tabela_html += "</table>"
 
+                        if extras_dados:
+                            tabela_html += "<br><h4>Discriminação de Produtos Extras & Serviços:</h4>"
+                            tabela_html += "<table><tr><th>Serviço / Produto Extra</th><th>Qtd</th><th>Valor Unit.</th><th>Subtotal</th></tr>"
+                            for ex in extras_dados:
+                                tabela_html += f"<tr><td>{ex['Item']}</td><td>{ex['Qtd']}</td><td>R$ {ex['Valor']:.2f}</td><td>R$ {ex['Subtotal']:.2f}</td></tr>"
+                            tabela_html += "</table>"
+
                         if descricao_livre.strip():
-                            tabela_html += f"<br><h4>Observações / Cardápio:</h4><p>{descricao_livre.replace(chr(10), '<br>')}</p>"
+                            tabela_html += f"<br><h4>Observações:</h4><p>{descricao_livre.replace(chr(10), '<br>')}</p>"
                         
                         id_prop = f"PROP-{id_sel}"
                         data_hj = datetime.now().strftime("%d/%m/%Y")
