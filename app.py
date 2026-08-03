@@ -1,289 +1,429 @@
-const SEU_EMAIL = "catarina.costa@accor.com";
+import streamlit as st
+import pandas as pd
+from datetime import date, datetime, timedelta
+import gspread
+from google.oauth2.service_account import Credentials
+import altair as alt
+import json
 
-function doGet(e) {
-  const idProposta = e.parameter.id;
-  const nomeCliente = e.parameter.nome;
-  const acao = e.parameter.acao;
-  const ajusteTexto = e.parameter.ajusteTexto || "";
-  
-  if (!idProposta) return HtmlService.createHtmlOutput("Proposta não encontrada.");
+st.set_page_config(page_title="CRM Grupos & Propostas", page_icon="🏨", layout="wide")
 
-  const planilha = SpreadsheetApp.getActiveSpreadsheet();
-  const sheetPropostas = planilha.getSheetByName("Propostas");
-  
-  if (!sheetPropostas) return HtmlService.createHtmlOutput("Erro: Aba 'Propostas' não encontrada.");
-
-  const dados = sheetPropostas.getDataRange().getValues();
-  let linhaProposta = -1;
-  let resumoProdutos = "";
-  let valorTotal = "0.00";
-  let dataCriacao = "";
-  let nomeUsuario = "Equipe Comercial";
-  let cargoUsuario = "Gerente Geral";
-  let emailUsuario = "catarina.costa@accor.com";
-  let telUsuario = "(11) 5085-5699";
-
-  for (let i = 1; i < dados.length; i++) {
-    if (dados[i][0] == idProposta) {
-      linhaProposta = i + 1;
-      resumoProdutos = dados[i][3];
-      valorTotal = dados[i][4];
-      dataCriacao = dados[i][7] || new Date().toLocaleDateString('pt-BR');
-      
-      // Puxa da aba Propostas (Colunas J, K, L, M)
-      if (dados[i].length > 9 && dados[i][9]) nomeUsuario = dados[i][9];
-      if (dados[i].length > 10 && dados[i][10]) cargoUsuario = dados[i][10];
-      if (dados[i].length > 11 && dados[i][11]) emailUsuario = dados[i][11];
-      if (dados[i].length > 12 && dados[i][12]) telUsuario = dados[i][12];
-      break;
+st.markdown("""
+    <style>
+    @keyframes piscar {
+        0% { opacity: 1; }
+        50% { opacity: 0.3; }
+        100% { opacity: 1; }
     }
-  }
+    .alerta-piscando {
+        animation: piscar 1.2s infinite;
+        padding: 10px;
+        border-radius: 5px;
+        background-color: #ffcccc;
+        color: #990000;
+        font-weight: bold;
+        text-align: center;
+        margin-bottom: 10px;
+        border: 1px solid #ff9999;
+    }
+    </style>
+""", unsafe_allow_html=True)
 
-  if (linhaProposta == -1) return HtmlService.createHtmlOutput("Proposta não localizada.");
+URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1_vvU_tgDtHCqtoKG4xR5XMfmnujGTXf7pndgg_aQoX0/edit?gid=0#gid=0"
+URL_WEB_APP = "https://script.google.com/macros/s/AKfycbz7vQ65GWPeo1_qJpngvHkYG3G_GMmo_XYdsT-RSzcMisSHz70rtik3ftANwA3KGme1SQ/exec"
 
-  // TRATAMENTO DE AÇÃO (Aceitar, Ajuste ou Recusar)
-  if (acao) {
-    let novoStatus = "";
-    let assuntoEmail = "";
-    let mensagemDetalhe = "";
+@st.cache_resource(ttl=10) 
+def conectar_planilhas():
+    credenciais = dict(st.secrets["gcp_service_account"])
+    escopos = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+    creds = Credentials.from_service_account_info(credenciais, scopes=escopos)
+    cliente = gspread.authorize(creds)
     
-    if (acao === "aceitar") {
-      novoStatus = "Aceita pelo Cliente";
-      assuntoEmail = `🎉 Sucesso! O cliente ${nomeCliente} ACEITOU a proposta!`;
-      mensagemDetalhe = "O cliente aceitou os termos da proposta.";
-    } else if (acao === "ajuste") {
-      novoStatus = "Em Ajuste / Solicitação";
-      assuntoEmail = `🔄 Atenção: O cliente ${nomeCliente} solicitou AJUSTES na proposta!`;
-      mensagemDetalhe = `Observação do cliente:\n"${ajusteTexto}"`;
-      sheetPropostas.getRange(linhaProposta, 7).setValue(ajusteTexto);
-    } else if (acao === "recusardireto") {
-      novoStatus = "Recusada";
-      assuntoEmail = `❌ Aviso: O cliente ${nomeCliente} RECUSOU a proposta.`;
-      mensagemDetalhe = "O cliente recusou a proposta.";
-    }
+    planilha = cliente.open_by_url(URL_PLANILHA)
+    aba_dados = planilha.worksheet("Dados")
+    aba_usuarios = planilha.worksheet("Usuarios")
+    
+    try:
+        aba_propostas = planilha.worksheet("Propostas")
+    except:
+        aba_propostas = planilha.add_worksheet(title="Propostas", rows=100, cols=14)
+        aba_propostas.append_row(['ID_Proposta', 'Cliente', 'Email', 'Produtos_Contratados', 'Valor_Total', 'Status', 'Observacoes', 'Data_Criacao', 'Ultimo_Acesso', 'Nome_Usuario', 'Cargo_Usuario', 'Email_Usuario', 'Tel_Usuario', 'Link_Proposta'])
 
-    sheetPropostas.getRange(linhaProposta, 6).setValue(novoStatus);
+    return aba_dados, aba_usuarios, aba_propostas
 
-    try {
-      MailApp.sendEmail(
-        emailUsuario,
-        assuntoEmail,
-        `Olá ${nomeUsuario},\n\nO cliente ${nomeCliente} (Proposta ID: ${idProposta}) respondeu à proposta.\n\nStatus: ${novoStatus}\n${mensagemDetalhe}\n\nResumo:\n${resumoProdutos}\n\nValor Total: R$ ${valorTotal}`
-      );
-    } catch(err) {}
+try:
+    aba_dados, aba_usuarios, aba_propostas = conectar_planilhas()
+    
+    dados_planilha = aba_dados.get_all_records(expected_headers=[
+        'ID', 'Data Envio', 'Empresa', 'Contato', 'E-mail', 'Telefone', 
+        'Check-in', 'Check-out', 'Total RN Single', 'Total RN Duplo', 'Total RN Triplo', 
+        'Tarifa Single', 'Tarifa Duplo', 'Tarifa Triplo', 'Receita Total', 
+        'Status', 'Deadline', 'Motivo Recusa', 'Mapa de Quartos'
+    ])
+    df = pd.DataFrame(dados_planilha)
+    if not df.empty:
+        df.columns = df.columns.str.strip()
+        
+    propostas_valores = aba_propostas.get_all_values()
+    if len(propostas_valores) > 1:
+        header_prop = [h.strip() for h in propostas_valores[0]]
+        df_propostas = pd.DataFrame(propostas_valores[1:], columns=header_prop)
+    else:
+        df_propostas = pd.DataFrame(columns=['ID_Proposta', 'Cliente', 'Email', 'Produtos_Contratados', 'Valor_Total', 'Status', 'Observacoes', 'Data_Criacao', 'Ultimo_Acesso', 'Link_Proposta'])
 
-    return HtmlService.createHtmlOutput(`
-      <html>
-        <head><meta charset="utf-8">
-        <style>body { font-family: Arial; background: #f4f6f9; text-align: center; padding: 50px; }</style>
-        </head>
-        <body>
-          <div style="max-width: 500px; background: #fff; padding: 40px; border-radius: 8px; margin: auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1);">
-            <h2 style="color: #00703c;">🏨 Ibis Budget São Paulo Paraíso</h2>
-            <p>Obrigado, <b>${nomeCliente}</b>!</p>
-            <p>Sua resposta foi enviada com sucesso ao hotel. Nossa equipe entrará em contato em breve.</p>
-          </div>
-        </body>
-      </html>
-    `);
-  }
+    todos_valores_user = aba_usuarios.get_all_values()
+    if len(todos_valores_user) <= 1:
+        if len(todos_valores_user) == 0:
+            aba_usuarios.append_row(['Usuario', 'Senha', 'Perfil', 'Primeiro Acesso', 'Cargo', 'Email', 'Telefone'])
+            
+        usuarios_iniciais = [
+            ["Amanda", "mudar@123", "Hotel", "Sim", "Analista de Distribuição e Reservas", "amanda@accor.com", "(11) 5085-5699"],
+            ["Italo", "mudar@123", "Hotel", "Sim", "Analista de Distribuição e Reservas", "italo@accor.com", "(11) 5085-5699"],
+            ["Amanda Ferrari", "mudar@123", "Vendas", "Sim", "Gerente de Vendas – Região Paulista & Jardins", "amanda.ferrari@accor.com", "(11) 99487-5023"],
+            ["Elton", "mudar@123", "Vendas", "Sim", "Gerente de Contas / Account Manager", "elton.santos@accor.com", "(11) 94537-3303"],
+            ["Catarina", "mudar@123", "Gerencial", "Não", "Gerente Geral", "catarina.costa@accor.com", "(11) 5085-5699"],
+            ["Kessia", "mudar@123", "Gerencial", "Sim", "Subgerente", "kessia.gomes@accor.com", "(11) 5085-5699"],
+            ["Cecilia", "mudar@123", "Gerencial", "Sim", "Coordenadora Operacional", "cecilia.maria@accor.com", "(11) 5085-5699"],
+            ["Amanda Rolim", "mudar@123", "Hotel", "Sim", "Revenue Manager", "amanda.rolim@accor.com", "(11) 5085-5699"],
+            ["Lucas Cardoso", "mudar@123", "Hotel", "Sim", "Supervisor de Guest Relation", "lucas.cardoso@accor.com", "(11) 5085-5699"]
+        ]
+        for u in usuarios_iniciais:
+            aba_usuarios.append_row(u)
+        todos_valores_user = aba_usuarios.get_all_values()
 
-  // RASTREAMENTO DE LEITURA (PRIMEIRO ACESSO)
-  if (!e.parameter.lido) {
-    sheetPropostas.getRange(linhaProposta, 9).setValue(new Date());
-    try {
-      MailApp.sendEmail(
-        emailUsuario,
-        `👀 Alerta: O cliente ${nomeCliente} abriu a proposta!`,
-        `Olá ${nomeUsuario},\n\nO cliente ${nomeCliente} (Proposta ID: ${idProposta}) acabou de abrir a proposta.\n\nResumo:\n${resumoProdutos}\n\nValor Total: R$ ${valorTotal}`
-      );
-    } catch(err) {}
-  }
+    header = [str(h).strip().lower() for h in todos_valores_user[0]]
+    rows = todos_valores_user[1:]
+    df_usuarios = pd.DataFrame(rows, columns=header)
+            
+except Exception as e:
+    st.error(f"Erro ao conectar com as abas do Google Sheets: {e}")
+    st.stop()
 
-  const scriptUrl = ScriptApp.getService().getUrl();
-  let contemAlimentos = resumoProdutos.toLowerCase().includes("almoço") || resumoProdutos.toLowerCase().includes("jantar") || resumoProdutos.toLowerCase().includes("café da manhã");
+# Login
+if "logado" not in st.session_state:
+    st.session_state["logado"] = False
+    st.session_state["usuario"] = ""
+    st.session_state["perfil"] = ""
+    st.session_state["cargo"] = ""
+    st.session_state["email_user"] = ""
+    st.session_state["tel_user"] = ""
+    st.session_state["mudar_senha"] = False
 
-  // TELA DA CARTA ACORDO OFICIAL FORMATADA
-  return HtmlService.createHtmlOutput(`
-    <html>
-      <head>
-        <meta charset="utf-8">
-        <style>
-          body { font-family: Arial, sans-serif; background-color: #f4f6f9; color: #333; padding: 20px; line-height: 1.6; }
-          .container { max-width: 800px; background: #fff; padding: 40px; border-radius: 8px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin: auto; }
-          .header { text-align: center; border-bottom: 2px solid #00703c; padding-bottom: 20px; margin-bottom: 20px; }
-          .logo { max-width: 160px; height: auto; margin-bottom: 10px; }
-          .hotel-nome { font-size: 20px; font-weight: bold; color: #00703c; text-transform: uppercase; }
-          .data-envio { text-align: right; font-weight: bold; color: #555; margin-bottom: 20px; }
-          h3 { color: #00703c; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-top: 30px; }
-          .produtos { background: #f9f9f9; padding: 20px; border-radius: 5px; margin: 15px 0; border-left: 4px solid #00703c; }
-          .destaque { background: #fff3cd; border: 1px solid #ffeeba; padding: 12px; border-radius: 5px; font-weight: bold; color: #856404; text-align: center; margin: 20px 0; }
-          table { width: 100%; border-collapse: collapse; margin: 15px 0; font-size: 14px; }
-          th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-          th { background-color: #f2f2f2; color: #333; }
-          .valor-total { font-size: 20px; font-weight: bold; color: #00703c; text-align: right; margin: 20px 0; }
-          .botoes { margin-top: 30px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
-          .btn { padding: 12px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; color: white; border: none; cursor: pointer; font-size: 14px; display: inline-block; }
-          .btn-aceitar { background-color: #28a745; }
-          .btn-ajuste { background-color: #ffc107; color: #333; }
-          .btn-recusar { background-color: #dc3545; }
-          .box-ajuste { display: none; background: #fff3cd; padding: 15px; border-radius: 5px; margin-top: 15px; border: 1px solid #ffeeba; }
-          textarea { width: 100%; height: 80px; padding: 8px; border-radius: 4px; border: 1px solid #ccc; margin-top: 5px; font-family: Arial; box-sizing: border-box; }
-          .assinatura { margin-top: 40px; border-top: 1px solid #ddd; padding-top: 15px; font-size: 14px; color: #444; }
-        </style>
-        <script>
-          function mostrarCampoAjuste() {
-            document.getElementById('bloco-ajuste').style.display = 'block';
-          }
-          function enviarAjuste(event) {
-            event.preventDefault();
-            var texto = document.getElementById('textoAjuste').value;
-            if(!texto.trim()) {
-              alert('Por favor, descreva o ajuste desejado.');
-              return;
-            }
-            var url = "${scriptUrl}?id=${idProposta}&nome=${encodeURIComponent(nomeCliente)}&acao=ajuste&lido=1&ajusteTexto=" + encodeURIComponent(texto);
-            document.body.innerHTML = "<div style='text-align:center; padding:50px; font-family:Arial;'><h2>Enviando solicitação ao hotel...</h2></div>";
-            fetch(url).then(function() {
-              document.body.innerHTML = "<div style='max-width:500px; background:#fff; padding:40px; border-radius:8px; margin:50px auto; text-align:center; font-family:Arial; box-shadow:0 4px 10px rgba(0,0,0,0.1);'><h2 style='color:#00703c;'>🏨 Ibis Budget São Paulo Paraíso</h2><p>Obrigado, <b>${nomeCliente}</b>!</p><p>Sua solicitação de ajuste foi enviada com sucesso ao hotel.</p></div>";
-            });
-          }
-        </script>
-      </head>
-      <body>
-        <div class="container">
-          <div class="header">
-            <img src="https://group-accor.imgix.net/https%3A%2F%2Fimages.group.accor.com%2Fyrj0orc8tx24%2F6ot5rWSoRzhfUhNSoPpSf9%2F932ab95914d753fac2e5510b11cdee2e%2FLogoMarque-Groupe_ibis-budget.svg?ixlib=js-3.8.0&w=480&q=80&auto=format&fit=crop&crop=focalpoint&s=96a349e61a8d5e512cc52df7642ed09f" class="logo" alt="Logo Ibis Budget">
-            <div class="hotel-nome">Ibis Budget São Paulo Paraíso</div>
-          </div>
-          
-          <div class="data-envio">
-            São Paulo, ${dataCriacao}
-          </div>
-          
-          <p>Prezado(a) <b>${nomeCliente}</b>,</p>
-          <p>Agradecemos pelo contato e interesse de se acomodar no Ibis Budget São Paulo Paraíso. Segue nossa proposta para sua avaliação:</p>
-          
-          <h3>PRAZO E STATUS DA CARTA ACORDO</h3>
-          <p>
-            • Esta proposta é válida exclusivamente para o período descrito, com prazo de vigência de 10 dias corridos.<br>
-            • No momento, não há bloqueio de apartamentos; a disponibilidade está sujeita à ocupação do hotel.<br>
-            • Os valores apresentados são aplicáveis mediante a confirmação de todos os serviços descritos nesta proposta. Qualquer alteração ou redução nos serviços contratados poderá implicar em reajuste nos valores.<br>
-            • Para confirmação das hospedagens, solicitamos que o pedido de bloqueio dos apartamentos e/ou demais serviços seja formalizado por e-mail.
-          </p>
-          
-          <h3>HOSPEDAGEM</h3>
-          <div class="produtos">
-            ${resumoProdutos}
-          </div>
+if not st.session_state["logado"]:
+    st.title("🔐 Acesso ao Sistema de Grupos")
+    lista_usuarios_validos = df_usuarios['usuario'].dropna().tolist()
+    usuario_input = st.selectbox("Selecione seu Nome de Usuário", [""] + lista_usuarios_validos)
+    senha_input = st.text_input("Senha", type="password")
+    
+    if st.button("Entrar", type="primary"):
+        if usuario_input == "":
+            st.warning("Selecione um usuário.")
+        else:
+            user_row = df_usuarios[df_usuarios['usuario'] == usuario_input].iloc[0]
+            senha_cadastrada = str(user_row['senha']).strip()
+            if senha_input == senha_cadastrada:
+                st.session_state["logado"] = True
+                st.session_state["usuario"] = usuario_input
+                st.session_state["perfil"] = str(user_row['perfil']).strip()
+                st.session_state["cargo"] = str(user_row.get('cargo', 'Gerente Geral')).strip()
+                st.session_state["email_user"] = str(user_row.get('email', 'catarina.costa@accor.com')).strip()
+                st.session_state["tel_user"] = str(user_row.get('telefone', '(11) 5085-5699')).strip()
+                
+                if str(user_row['primeiro acesso']).strip() == "Sim" or senha_cadastrada == "mudar@123":
+                    st.session_state["mudar_senha"] = True
+                st.rerun()
+            else:
+                st.error("Senha incorreta!")
+    st.stop()
 
-          <div class="destaque">
-            ⚠️ PARA VALORES DE HOSPEDAGENS PARA UM NÚMERO INFERIOR DE 10 APARTAMENTOS, FAVOR CONSULTAR DIRETAMENTE EM NOSSO SITE: ALL.COM
-          </div>
+if st.session_state["mudar_senha"]:
+    st.title("🔑 Redefinição de Senha Obrigatória")
+    with st.form("form_nova_senha"):
+        nova_senha1 = st.text_input("Nova Senha", type="password")
+        nova_senha2 = st.text_input("Confirme a Nova Senha", type="password")
+        btn_trocar = st.form_submit_button("Salvar Nova Senha", type="primary")
+        if btn_trocar:
+            if nova_senha1 == "" or nova_senha1 != nova_senha2:
+                st.error("As senhas não coincidem ou estão em branco.")
+            else:
+                idx = df_usuarios[df_usuarios['usuario'] == st.session_state["usuario"]].index[0] + 2
+                aba_usuarios.update_cell(idx, 2, nova_senha1) 
+                aba_usuarios.update_cell(idx, 4, "Não") 
+                st.success("Senha alterada com sucesso!")
+                st.session_state["mudar_senha"] = False
+                st.cache_resource.clear()
+                st.rerun()
+    st.stop()
 
-          <p>
-            <b>Categorias de apartamentos nas seguintes configurações:</b><br>
-            • <b>DBD/Standard</b> – 01 cama de casal (01 a 02 pessoas)<br>
-            • <b>DBC/Standard</b> – 01 cama de casal e 01 cama de solteiro (01 a 03 pessoas)<br>
-            • <b>TWC/Standard</b> – 02 camas de solteiro (01 a 02 pessoas)<br>
-            • <b>ROH/Superior</b> – 01 cama de casal (01 a 02 pessoas)<br>
-            • <b>S2D/Superior</b> – 01 cama de casal e 01 cama de solteiro (01 a 03 pessoas)
-          </p>
+st.sidebar.button("Sair (Logout)", on_click=lambda: st.session_state.clear())
 
-          <p>
-            • Café da manhã incluso na diária, servido no restaurante:<br>
-            &nbsp;&nbsp;&nbsp;&nbsp;- Segunda à sexta: das 06H30 às 10H00 da manhã.<br>
-            &nbsp;&nbsp;&nbsp;&nbsp;- Sábado, Domingo e feriados: das 07H00 às 11H00 da manhã.<br>
-            • Sobre as diárias, incide taxa de 5% de Imposto sobre Serviço (ISS), conforme detalhado na planilha acima.<br>
-            • Tarifas de hospedagem NET, não comissionada; OU Tarifas de hospedagem comissionadas em R$ 10 por reserva / diária (após o check-out).<br>
-            • O hotel oferece internet cortesia aos hóspedes, com acesso disponível nos apartamentos, áreas comuns e de lazer.<br>
-            • O contrato é válido exclusivamente para as categorias e configurações de apartamento informadas.<br>
-            • O estacionamento não está incluído na proposta. O pagamento deve ser realizado diretamente pelo hóspede à empresa responsável pelo serviço de valet/estacionamento.
-          </p>
+perfil = st.session_state["perfil"]
+usuario_atual = st.session_state["usuario"]
+st.sidebar.title(f"🏨 Olá, {usuario_atual}")
+st.sidebar.caption(f"Perfil: {perfil}")
 
-          ${contemAlimentos ? `
-            <h3>ALIMENTOS E BEBIDAS</h3>
-            <p>
-              • Para sua segurança o hotel não permite a entrada ou saída de alimentos no restaurante.<br>
-              • Valores abaixo como sugestão para as hospedagens. Após a carta acordo assinada, os serviços abaixo mencionados serão considerados como contratados e garantidos de forma integral ao bloqueio e contrato.<br>
-              • Os valores de alimentos & bebidas são NET, não comissionados.
-            </p>
-          ` : ''}
+opcoes_menu = []
+if perfil == "Gerencial":
+    opcoes_menu = ["📊 Dashboard", "🛎️ Nova Solicitação", "💼 Gestão de Vendas & Propostas", "📑 Acompanhamento de Propostas", "👀 Follow-up", "⚙️ Gerenciar Usuários"]
+elif perfil == "Hotel":
+    opcoes_menu = ["🛎️ Nova Solicitação", "👀 Follow-up"]
+elif perfil == "Vendas":
+    opcoes_menu = ["📊 Dashboard", "💼 Gestão de Vendas & Propostas", "📑 Acompanhamento de Propostas", "👀 Follow-up"]
 
-          <div class="valor-total">
-            Valor Total Geral: R$ ${valorTotal}
-          </div>
+menu = st.sidebar.radio("Navegação:", opcoes_menu)
 
-          <h3>OBSERVAÇÕES GERAIS</h3>
-          <p>
-            • <b>Horários de Check-in e Check-out:</b> O check-in está disponível a partir das 15h00 e o check-out deve ser realizado até às 12h00.<br>
-            • <b>Early Check-in:</b> Para garantir a entrada antecipada no apartamento, recomendamos a reserva da noite anterior à chegada. Nesse caso, será cobrada a diária integral como pré-registro.<br>
-            • <b>Late Check-out:</b> Para check-out realizado entre 12h00 e 13h00, será cobrada meia diária mediante a disponibilidade. Após esse horário, será aplicada a cobrança de uma diária completa (pós-registro).<br>
-            • <b>Guarda bagagens:</b> O hotel dispõe de guarda-volumes por durante 24h, com custo adicional. Consultar valores diretamente com a equipe de reservas do hotel.<br>
-            • <b>Rooming List (Lista de Hóspedes):</b> A lista com os nomes dos hóspedes deverá ser enviada com, no mínimo, 10 dias de antecedência da data de entrada, contendo: nome, sobrenome, categoria do apartamento, data de entrada e saída. Em casos de duplos ou triplos, indicar a divisão de hóspedes.<br>
-            • <b>Política de Crianças:</b> Bebês de 0 a 2 anos, berço como cortesia (sujeito à disponibilidade). Crianças de 2 a 11 anos hospedagem gratuita no mesmo apartamento dos pais utilizando a mesma cama.<br>
-            • <b>Menores de 18 anos:</b> Menores desacompanhados devem apresentar autorização com firma reconhecida dos pais/responsáveis e documento de identidade.
-          </p>
+# 1. Dashboard
+if menu == "📊 Dashboard":
+    st.header("📊 Visão Gerencial de Grupos")
+    if df.empty:
+        st.info("Nenhum dado cadastrado.")
+    else:
+        df['Data Envio'] = pd.to_datetime(df['Data Envio'], format='%d/%m/%Y', errors='coerce')
+        df['Mês/Ano Envio'] = df['Data Envio'].dt.to_period('M').astype(str)
+        meses_disponiveis = sorted(df['Mês/Ano Envio'].dropna().unique().tolist(), reverse=True)
+        mes_selecionado = st.selectbox("Filtrar por Mês de Entrada:", ["Todos"] + meses_disponiveis)
+        df_dash = df[df['Mês/Ano Envio'] == mes_selecionado] if mes_selecionado != "Todos" else df
 
-          <h3>CONDIÇÕES DE PAGAMENTO</h3>
-          <p>
-            O pagamento pode ser realizado 100% antecipadamente, através de cartão de crédito e depósito bancário.<br><br>
-            <b>Formas de Pagamento:</b><br>
-            • <b>Cartão de Crédito:</b> Solicitar previamente a carta de autorização de débito ou link para pagamento online (Aceitamos todas as bandeiras exceto HIPERCARD. Cheques não são aceitos).<br>
-            • <b>PIX:</b> Utilizar o CNPJ do hotel informado no contrato e enviar o comprovante por e-mail.<br>
-            • <b>Depósito Bancário:</b> Obrigatória a apresentação do comprovante enviado por e-mail diretamente ao hotel.
-          </p>
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Leads Recebidos", len(df_dash))
+        col2.metric("Propostas Enviadas", len(df_dash[df_dash['Status'].str.contains("cotação enviada", case=False, na=False)]))
+        col3.metric("Confirmados", len(df_dash[df_dash['Status'].str.contains("confirmado", case=False, na=False)]))
+        col4.metric("Recusados", len(df_dash[df_dash['Status'].str.contains("recusado", case=False, na=False)]))
 
-          <h3>AGENDA DE PAGAMENTOS</h3>
-          <table>
-            <tr><th>Data</th><th>Valor a ser pago</th></tr>
-            <tr><td>05 dias após a assinatura da carta acordo</td><td>20% do total da carta</td></tr>
-            <tr><td>59 dias da data do evento</td><td>30% do total da carta</td></tr>
-            <tr><td>39 dias da data do evento</td><td>30% do total da carta</td></tr>
-            <tr><td>20 dias da data do evento</td><td>20% do total da carta</td></tr>
-          </table>
+# 2. Nova Solicitação
+elif menu == "🛎️ Nova Solicitação":
+    st.header("🛎️ Enviar Grupo para Vendas")
+    empresa = st.text_input("Empresa / Agência")
+    col1, col2, col3 = st.columns(3)
+    with col1: contato = st.text_input("Contato")
+    with col2: email = st.text_input("E-mail")
+    with col3: telefone = st.text_input("Telefone")
+        
+    col_in, col_out = st.columns(2)
+    with col_in: checkin = st.date_input("Primeiro Check-in", value=date.today())
+    with col_out: checkout = st.date_input("Último Check-out", value=date.today() + timedelta(days=1))
+    
+    dias = (checkout - checkin).days
+    if dias > 0:
+        datas_lista = [checkin + timedelta(days=i) for i in range(dias)]
+        df_grid = pd.DataFrame({"Data": [d.strftime("%d/%m/%Y") for d in datas_lista], "Single": [0]*dias, "Duplo": [0]*dias, "Triplo": [0]*dias})
+        df_editado = st.data_editor(df_grid, hide_index=True, use_container_width=True)
+        
+        if st.button("🚀 Enviar Solicitação para Vendas", type="primary"):
+            if empresa == "":
+                st.error("O nome da Empresa é obrigatório.")
+            else:
+                id_unico = "G-" + datetime.now().strftime("%Y%m%d%H%M")
+                nova_linha = [
+                    id_unico, datetime.now().strftime("%d/%m/%Y"), empresa, contato, email, telefone, 
+                    checkin.strftime("%d/%m/%Y"), checkout.strftime("%d/%m/%Y"), 
+                    int(df_editado["Single"].sum()), int(df_editado["Duplo"].sum()), int(df_editado["Triplo"].sum()), 
+                    0, 0, 0, 0, "Enviado para time de vendas", "", "", df_editado.to_json(orient='records')
+                ]
+                aba_dados.append_row(nova_linha)
+                st.success("✅ Grupo registrado com sucesso!")
+                st.cache_resource.clear()
 
-          <h3>CONDIÇÕES DE CANCELAMENTO</h3>
-          <p>Em caso de cancelamento, alteração de data ou redução no número de diárias, serão aplicadas as seguintes taxas sobre o valor total do contrato:</p>
-          <table>
-            <tr><th>Anterior à data prevista</th><th>Taxa a ser cobrada</th></tr>
-            <tr><td>Da confirmação até 60 dias antes do evento</td><td>20% do total da carta</td></tr>
-            <tr><td>Entre 59 e 40 dias</td><td>50% do total da carta</td></tr>
-            <tr><td>Entre 39 e 20 dias</td><td>80% do total da carta</td></tr>
-            <tr><td>Entre 20 dias e a data do evento</td><td>100% do total da carta</td></tr>
-          </table>
-          <p><i>Em caso de no show de apartamentos ou saída antecipada, será cobrado o total de diárias do período contratado.</i></p>
+# 3. Gestão de Vendas & Proposta
+elif menu == "💼 Gestão de Vendas & Propostas":
+    st.header("💼 Tratativa, Precificação e Envio de Proposta")
+    if perfil not in ["Vendas", "Gerencial"]:
+        st.error("🔒 Acesso Restrito!")
+    else:
+        if df.empty:
+            st.warning("Nenhum grupo cadastrado.")
+        else:
+            df['Status_Clean'] = df['Status'].astype(str).str.strip().str.lower()
+            df_pendentes = df[~df['Status_Clean'].isin(['confirmado', 'recusado'])]
+            
+            if df_pendentes.empty:
+                st.success("Nenhum grupo pendente no momento!")
+            else:
+                opcoes = df_pendentes['ID'].astype(str) + " - " + df_pendentes['Empresa'] + " (" + df_pendentes['Status'] + ")"
+                grupo_sel = st.selectbox("Escolha o Grupo para tratar:", opcoes)
+                id_sel = grupo_sel.split(" - ")[0]
+                linha_atual = df_pendentes[df_pendentes['ID'] == id_sel].iloc[0]
+                
+                rn_s = int(linha_atual['Total RN Single'] or 0)
+                rn_d = int(linha_atual['Total RN Duplo'] or 0)
+                rn_t = int(linha_atual['Total RN Triplo'] or 0)
+                
+                with st.form("form_tratativa_completa"):
+                    st.subheader("1. Tarifas de Hospedagem (NET)")
+                    c1, c2, c3 = st.columns(3)
+                    with c1: t_single = st.number_input("Tarifa Single (R$)", value=float(linha_atual.get('Tarifa Single', 0) or 0))
+                    with c2: t_duplo = st.number_input("Tarifa Duplo (R$)", value=float(linha_atual.get('Tarifa Duplo', 0) or 0))
+                    with c3: t_triplo = st.number_input("Tarifa Triplo (R$)", value=float(linha_atual.get('Tarifa Triplo', 0) or 0))
+                    
+                    st.subheader("2. Tipologias Oferecidas")
+                    tipologias_opcoes = [
+                        "DBD/Standard – 01 cama de casal (01 a 02 pessoas)",
+                        "DBC/Standard – 01 cama de casal e 01 cama de solteiro (01 a 03 pessoas)",
+                        "TWC/Standard – 02 camas de solteiro (01 a 02 pessoas)",
+                        "ROH/Superior – 01 cama de casal (01 a 02 pessoas)",
+                        "S2D/Superior – 01 cama de casal e 01 cama de solteiro (01 a 03 pessoas)"
+                    ]
+                    tipologias_selecionadas = st.multiselect("Tipologias de Apartamentos Disponíveis:", tipologias_opcoes)
 
-          <div class="assinatura">
-            Atenciosamente,<br><br>
-            <b>${nomeUsuario}</b><br>
-            ${cargoUsuario}<br>
-            📧 ${emailUsuario} | 📞 ${telUsuario}<br>
-            <b>Ibis Budget São Paulo Paraíso</b>
-          </div>
-          
-          <p style="margin-top: 30px; font-weight: bold; text-align: center;">Como deseja proceder com esta proposta?</p>
-          
-          <div class="botoes">
-            <a href="${scriptUrl}?id=${idProposta}&nome=${encodeURIComponent(nomeCliente)}&acao=aceitar&lido=1" class="btn btn-aceitar">✅ Aceitar Proposta</a>
-            <button onclick="mostrarCampoAjuste()" class="btn btn-ajuste">🔄 Solicitar Ajustes</button>
-            <a href="${scriptUrl}?id=${idProposta}&nome=${encodeURIComponent(nomeCliente)}&acao=recusardireto&lido=1" class="btn btn-recusar">❌ Recusar</a>
-          </div>
+                    st.subheader("3. Produtos Extras & Serviços")
+                    extras_opcoes = ["Café da manhã", "Almoço Buffet", "Jantar Buffet", "Almoço Três tempos", "Jantar Três tempos", "Abertura de Porta", "Late Check-out", "Guarda Volumes"]
+                    extras_selecionados = st.multiselect("Selecione adicionais:", extras_opcoes)
+                    
+                    extras_dados = []
+                    if extras_selecionados:
+                        for ext in extras_selecionados:
+                            ec1, ec2, ec3 = st.columns([3, 1, 1])
+                            with ec1: st.write(f"**{ext}**")
+                            with ec2: q_ext = st.number_input(f"Qtd ({ext})", min_value=1, value=1, key=f"q_{ext}")
+                            with ec3: v_ext = st.number_input(f"Valor Unit. R$ ({ext})", min_value=0.0, value=50.0, step=5.0, key=f"v_{ext}")
+                            extras_dados.append({"Item": ext, "Qtd": q_ext, "Valor": v_ext, "Subtotal": q_ext * v_ext})
 
-          <div id="bloco-ajuste" class="box-ajuste">
-            <form onsubmit="enviarAjuste(event)">
-              <label for="textoAjuste"><b>Descreva os ajustes necessários:</b></label><br>
-              <textarea id="textoAjuste" placeholder="Ex: Precisamos alterar a data do check-out para o dia..."></textarea>
-              <br>
-              <button type="submit" class="btn btn-aceitar" style="margin-top: 10px; padding: 8px 15px;">Enviar Solicitação de Ajuste</button>
-            </form>
-          </div>
-        </div>
-      </body>
-    </html>
-  `);
-}
+                    st.subheader("4. Status Comercial")
+                    novo_status = st.radio("Status:", ["Cotação enviada", "Confirmado", "Recusado"], horizontal=True)
+                    novo_deadline = st.date_input("Deadline", value=date.today())
+                    
+                    if st.form_submit_button("💾 Salvar e Gerar Link da Proposta", type="primary"):
+                        receita_hospedagem = (rn_s * t_single) + (rn_d * t_duplo) + (rn_t * t_triplo)
+                        receita_extras = sum([item["Subtotal"] for item in extras_dados])
+                        receita_total = receita_hospedagem + receita_extras
+                        
+                        linha_planilha = df[df['ID'] == id_sel].index[0] + 2
+                        aba_dados.update_cell(linha_planilha, 12, t_single)
+                        aba_dados.update_cell(linha_planilha, 13, t_duplo)
+                        aba_dados.update_cell(linha_planilha, 14, t_triplo)
+                        aba_dados.update_cell(linha_planilha, 15, receita_total)
+                        aba_dados.update_cell(linha_planilha, 16, novo_status)
+                        aba_dados.update_cell(linha_planilha, 17, novo_deadline.strftime("%d/%m/%Y") if novo_status == "Cotação enviada" else "")
+                        
+                        tabela_html = "<h4>Tipologias de Apartamentos Oferecidas:</h4><ul>"
+                        if tipologias_selecionadas:
+                            for tp in tipologias_selecionadas:
+                                tabela_html += f"<li><b>{tp}</b></li>"
+                        else:
+                            tabela_html += "<li>Nenhuma tipologia específica selecionada.</li>"
+                        tabela_html += "</ul><br>"
 
-function doPost(e) {
-  return doGet(e);
-}
+                        tabela_html += "<h4>Discriminação de Valores (Com ISS 5%):</h4>"
+                        tabela_html += "<table><tr><th>Serviço / Acomodação</th><th>Qtd / RN</th><th>Valor Unit. NET</th><th>Subtotal (com ISS 5%)</th></tr>"
+                        
+                        if rn_s > 0: tabela_html += f"<tr><td>Diária Single</td><td>{rn_s}</td><td>R$ {t_single:.2f}</td><td>R$ {(rn_s * t_single * 1.05):.2f}</td></tr>"
+                        if rn_d > 0: tabela_html += f"<tr><td>Diária Dupla</td><td>{rn_d}</td><td>R$ {t_duplo:.2f}</td><td>R$ {(rn_d * t_duplo * 1.05):.2f}</td></tr>"
+                        if rn_t > 0: tabela_html += f"<tr><td>Diária Tripla</td><td>{rn_t}</td><td>R$ {t_triplo:.2f}</td><td>R$ {(rn_t * t_triplo * 1.05):.2f}</td></tr>"
+                        
+                        for ex in extras_dados:
+                            tabela_html += f"<tr><td>{ex['Item']}</td><td>{ex['Qtd']}</td><td>R$ {ex['Valor']:.2f}</td><td>R$ {ex['Subtotal']:.2f}</td></tr>"
+                        tabela_html += "</table>"
+                        
+                        id_prop = f"PROP-{id_sel}"
+                        data_hj = datetime.now().strftime("%d/%m/%Y")
+                        link_rastreavel = f"{URL_WEB_APP}?id={id_prop}&nome={linha_atual['Empresa'].replace(' ', '%20')}"
+                        
+                        u_logado = st.session_state.get("usuario", "Equipe")
+                        u_cargo = st.session_state.get("cargo", "Gerente Geral")
+                        u_email = st.session_state.get("email_user", "catarina.costa@accor.com")
+                        u_tel = st.session_state.get("tel_user", "(11) 5085-5699")
+
+                        propostas_atuais = aba_propostas.get_all_values()
+                        achou = False
+                        for idx_p, p_row in enumerate(propostas_atuais[1:], start=2):
+                            if p_row[0] == id_prop:
+                                aba_propostas.update(f'A{idx_p}:N{idx_p}', [[
+                                    id_prop, linha_atual['Empresa'], linha_atual['E-mail'], tabela_html, 
+                                    f"{receita_total * 1.05:,.2f}", novo_status, "", data_hj, "",
+                                    u_logado, u_cargo, u_email, u_tel, link_rastreavel
+                                ]])
+                                achou = True
+                                break
+                        
+                        if not achou:
+                            aba_propostas.append_row([
+                                id_prop, linha_atual['Empresa'], linha_atual['E-mail'], tabela_html, 
+                                f"{receita_total * 1.05:,.2f}", novo_status, "", data_hj, "",
+                                u_logado, u_cargo, u_email, u_tel, link_rastreavel
+                            ])
+                        
+                        st.success(f"✅ Proposta gerada/atualizada com sucesso! Valor Total com ISS: R$ {(receita_total * 1.05):,.2f}")
+                        st.markdown("### 🔗 Link Inteligente para Envio:")
+                        st.code(link_rastreavel)
+                        st.cache_resource.clear()
+
+# 4. Acompanhamento de Propostas
+elif menu == "📑 Acompanhamento de Propostas":
+    st.header("📑 Acompanhamento e Reenvio de Propostas")
+    if df_propostas.empty:
+        st.info("Nenhuma proposta registrada até o momento.")
+    else:
+        df_propostas['Data_Dt'] = pd.to_datetime(df_propostas['Data_Criacao'], format='%d/%m/%Y', errors='coerce')
+        df_propostas['Mês/Ano'] = df_propostas['Data_Dt'].dt.to_period('M').astype(str)
+        
+        c_f1, c_f2 = st.columns(2)
+        with c_f1:
+            meses_disponiveis = sorted(df_propostas['Mês/Ano'].dropna().unique().tolist(), reverse=True)
+            filtro_mes = st.selectbox("Filtrar por Mês/Ano de Criação:", ["Todos"] + meses_disponiveis)
+        with c_f2:
+            filtro_status = st.selectbox("Filtrar por Status da Proposta:", ["Todas", "Pendente", "Aceita pelo Cliente", "Em Ajuste / Solicitação", "Recusada"])
+        
+        df_exib = df_propostas.copy()
+        if filtro_mes != "Todos":
+            df_exib = df_exib[df_exib['Mês/Ano'] == filtro_mes]
+        if filtro_status != "Todas":
+            df_exib = df_exib[df_exib['Status'] == filtro_status]
+        
+        if df_exib.empty:
+            st.warning("Nenhuma proposta encontrada com os filtros selecionados.")
+        else:
+            st.markdown(f"Exibindo **{len(df_exib)}** proposta(s):")
+            for idx, row in df_exib.iterrows():
+                with st.expander(f"📌 {row.get('Cliente', 'Cliente')} (ID: {row.get('ID_Proposta', '')}) - Status: **{row.get('Status', '')}**"):
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        st.write(f"**E-mail:** {row.get('Email', '')}")
+                        st.write(f"**Valor Total:** R$ {row.get('Valor_Total', '0.00')}")
+                        st.write(f"**Data de Criação:** {row.get('Data_Criacao', '')}")
+                    with col_b:
+                        st.write(f"**Último Acesso do Cliente:** {row.get('Ultimo_Acesso', 'Nunca acessada')}")
+                        st.write(f"**Ajustes Solicitados:** {row.get('Observacoes', 'Nenhum ajuste pendente')}")
+                    
+                    st.markdown("**Link da Proposta (Copie para reenviar):**")
+                    st.code(row.get('Link_Proposta', 'Link indisponível'))
+
+# 5. Follow-up
+elif menu == "👀 Follow-up":
+    st.header("👀 Acompanhamento da Operação")
+    if df.empty:
+        st.warning("Nenhum dado cadastrado.")
+    else:
+        t1, t2, t3 = st.tabs(["⚠️ Sem Tratativa", "⏳ Cotações em Aberto", "✅ Confirmados"])
+        with t1:
+            st.dataframe(df[df['Status_Clean'].str.contains("enviado", na=False)][['Data Envio', 'Empresa', 'Contato']], use_container_width=True)
+        with t2:
+            st.dataframe(df[df['Status_Clean'].str.contains("cotação enviada", na=False)][['Empresa', 'Deadline', 'Receita Total']], use_container_width=True)
+        with t3:
+            st.dataframe(df[df['Status_Clean'].str.contains("confirmado", na=False)][['Check-in', 'Check-out', 'Empresa', 'Receita Total']], use_container_width=True)
+
+# 6. Gerenciar Usuários
+elif menu == "⚙️ Gerenciar Usuários" and perfil == "Gerencial":
+    st.header("⚙️ Painel de Controle de Usuários")
+    tab_u1, tab_u2 = st.tabs(["📋 Usuários Cadastrados", "➕ Adicionar / Editar Perfil"])
+    with tab_u1:
+        # Exibe a tabela ocultando a coluna de Senhas por segurança
+        colunas_publicas = [c for c in df_usuarios.columns if c.lower() != 'senha']
+        st.dataframe(df_usuarios[colunas_publicas], use_container_width=True)
+    with tab_u2:
+        st.subheader("Cadastrar Novo Usuário ou Atualizar Perfil")
+        with st.form("form_cad_usuario"):
+            u_nome = st.text_input("Nome do Usuário")
+            u_senha = st.text_input("Senha Inicial", value="mudar@123", type="password")
+            u_perfil = st.selectbox("Perfil de Acesso", ["Hotel", "Vendas", "Gerencial"])
+            u_cargo = st.text_input("Cargo / Função (Ex: Gerente Geral)", value="Gerente Geral")
+            u_email = st.text_input("E-mail Corporativo", value="catarina.costa@accor.com")
+            u_tel = st.text_input("Telefone / Contato", value="(11) 5085-5699")
+            
+            btn_salvar_user = st.form_submit_button("Salvar Usuário", type="primary")
+            if btn_salvar_user:
+                if not u_nome:
+                    st.error("O nome do usuário é obrigatório.")
+                else:
+                    aba_usuarios.append_row([u_nome, u_senha, u_perfil, "Sim", u_cargo, u_email, u_tel])
+                    st.success(f"✅ Usuário **{u_nome}** cadastrado com sucesso!")
+                    st.cache_resource.clear()
