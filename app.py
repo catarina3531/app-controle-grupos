@@ -230,7 +230,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
         st.error("🔒 Acesso Restrito!")
     else:
         if df.empty:
-            st.warning("Nenhum grupo cadastrado.")
+            st.warning("Não há grupos cadastrados.")
         else:
             df['Status_Clean'] = df['Status'].astype(str).str.strip().str.lower()
             df_pendentes = df[~df['Status_Clean'].isin(['confirmado', 'recusado'])]
@@ -294,7 +294,6 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         aba_dados.update_cell(linha_planilha, 16, novo_status)
                         aba_dados.update_cell(linha_planilha, 17, novo_deadline.strftime("%d/%m/%Y") if novo_status == "Cotação enviada" else "")
                         
-                        # Constrói a tabela HTML detalhada
                         tabela_html = "<h4>Tipologias de Apartamentos Oferecidas:</h4><ul>"
                         if tipologias_selecionadas:
                             for tp in tipologias_selecionadas:
@@ -318,7 +317,6 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         data_hj = datetime.now().strftime("%d/%m/%Y")
                         link_rastreavel = f"{URL_WEB_APP}?id={id_prop}&nome={linha_atual['Empresa'].replace(' ', '%20')}"
                         
-                        # Verifica se já existe proposta para atualizar ou criar nova linha
                         propostas_atuais = aba_propostas.get_all_values()
                         achou = False
                         for idx_p, p_row in enumerate(propostas_atuais[1:], start=2):
@@ -351,30 +349,46 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         st.code(link_rastreavel)
                         st.cache_resource.clear()
 
-# 4. Acompanhamento de Propostas (Com Link Visível para Reenvio)
+# 4. Acompanhamento de Propostas (Com Filtro Mês/Ano)
 elif menu == "📑 Acompanhamento de Propostas":
     st.header("📑 Acompanhamento e Reenvio de Propostas")
     if df_propostas.empty:
         st.info("Nenhuma proposta registrada até o momento.")
     else:
-        filtro_status = st.selectbox("Filtrar por Status da Proposta:", ["Todas", "Pendente", "Aceita pelo Cliente", "Em Ajuste / Solicitação", "Recusada"])
-        df_exib = df_propostas if filtro_status == "Todas" else df_propostas[df_propostas['Status'] == filtro_status]
+        # Cria a coluna de Mês/Ano baseada na Data de Criação da proposta
+        df_propostas['Data_Dt'] = pd.to_datetime(df_propostas['Data_Criacao'], format='%d/%m/%Y', errors='coerce')
+        df_propostas['Mês/Ano'] = df_propostas['Data_Dt'].dt.to_period('M').astype(str)
         
-        st.markdown("Aqui você pode acompanhar o status, ver as solicitações de ajustes e **copiar o link** caso precise reenviar a proposta ao cliente:")
+        c_f1, c_f2 = st.columns(2)
+        with c_f1:
+            meses_disponiveis = sorted(df_propostas['Mês/Ano'].dropna().unique().tolist(), reverse=True)
+            filtro_mes = st.selectbox("Filtrar por Mês/Ano de Criação:", ["Todos"] + meses_disponiveis)
+        with c_f2:
+            filtro_status = st.selectbox("Filtrar por Status da Proposta:", ["Todas", "Pendente", "Aceita pelo Cliente", "Em Ajuste / Solicitação", "Recusada"])
         
-        for idx, row in df_exib.iterrows():
-            with st.expander(f"📌 {row.get('Cliente', 'Cliente')} (ID: {row.get('ID_Proposta', '')}) - Status: **{row.get('Status', '')}**"):
-                col_a, col_b = st.columns(2)
-                with col_a:
-                    st.write(f"**E-mail:** {row.get('Email', '')}")
-                    st.write(f"**Valor Total:** R$ {row.get('Valor_Total', '0.00')}")
-                    st.write(f"**Data de Criação:** {row.get('Data_Criacao', '')}")
-                with col_b:
-                    st.write(f"**Último Acesso do Cliente:** {row.get('Ultimo_Acesso', 'Nunca acessada')}")
-                    st.write(f"**Ajustes Solicitados:** {row.get('Observacoes', 'Nenhum ajuste pendente')}")
-                
-                st.markdown("**Link da Proposta (Copie para reenviar):**")
-                st.code(row.get('Link_Proposta', 'Link indisponível'))
+        df_exib = df_propostas.copy()
+        if filtro_mes != "Todos":
+            df_exib = df_exib[df_exib['Mês/Ano'] == filtro_mes]
+        if filtro_status != "Todas":
+            df_exib = df_exib[df_exib['Status'] == filtro_status]
+        
+        if df_exib.empty:
+            st.warning("Nenhuma proposta encontrada com os filtros selecionados.")
+        else:
+            st.markdown(f"Exibindo **{len(df_exib)}** proposta(s):")
+            for idx, row in df_exib.iterrows():
+                with st.expander(f"📌 {row.get('Cliente', 'Cliente')} (ID: {row.get('ID_Proposta', '')}) - Status: **{row.get('Status', '')}**"):
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        st.write(f"**E-mail:** {row.get('Email', '')}")
+                        st.write(f"**Valor Total:** R$ {row.get('Valor_Total', '0.00')}")
+                        st.write(f"**Data de Criação:** {row.get('Data_Criacao', '')}")
+                    with col_b:
+                        st.write(f"**Último Acesso do Cliente:** {row.get('Ultimo_Acesso', 'Nunca acessada')}")
+                        st.write(f"**Ajustes Solicitados:** {row.get('Observacoes', 'Nenhum ajuste pendente')}")
+                    
+                    st.markdown("**Link da Proposta (Copie para reenviar):**")
+                    st.code(row.get('Link_Proposta', 'Link indisponível'))
 
 # 5. Follow-up
 elif menu == "👀 Follow-up":
