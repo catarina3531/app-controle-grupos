@@ -32,7 +32,7 @@ st.markdown("""
 URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1_vvU_tgDtHCqtoKG4xR5XMfmnujGTXf7pndgg_aQoX0/edit?gid=0#gid=0"
 URL_WEB_APP = "https://script.google.com/macros/s/AKfycbz7vQ65GWPeo1_qJpngvHkYG3G_GMmo_XYdsT-RSzcMisSHz70rtik3ftANwA3KGme1SQ/exec"
 
-@st.cache_resource(ttl=10) 
+@st.cache_resource(ttl=300) 
 def conectar_planilhas():
     credenciais = dict(st.secrets["gcp_service_account"])
     escopos = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -54,24 +54,36 @@ def conectar_planilhas():
 try:
     aba_dados, aba_usuarios, aba_propostas = conectar_planilhas()
     
-    dados_planilha = aba_dados.get_all_records(expected_headers=[
-        'ID', 'Data Envio', 'Empresa', 'Contato', 'E-mail', 'Telefone', 
-        'Check-in', 'Check-out', 'Total RN Single', 'Total RN Duplo', 'Total RN Triplo', 
-        'Tarifa Single', 'Tarifa Duplo', 'Tarifa Triplo', 'Receita Total', 
-        'Status', 'Deadline', 'Motivo Recusa', 'Mapa de Quartos'
-    ])
+    @st.cache_data(ttl=60)
+    def carregar_dados_cache():
+        return aba_dados.get_all_records(expected_headers=[
+            'ID', 'Data Envio', 'Empresa', 'Contato', 'E-mail', 'Telefone', 
+            'Check-in', 'Check-out', 'Total RN Single', 'Total RN Duplo', 'Total RN Triplo', 
+            'Tarifa Single', 'Tarifa Duplo', 'Tarifa Triplo', 'Receita Total', 
+            'Status', 'Deadline', 'Motivo Recusa', 'Mapa de Quartos'
+        ])
+
+    @st.cache_data(ttl=60)
+    def carregar_propostas_cache():
+        return aba_propostas.get_all_values()
+
+    @st.cache_data(ttl=300)
+    def carregar_usuarios_cache():
+        return aba_usuarios.get_all_values()
+
+    dados_planilha = carregar_dados_cache()
     df = pd.DataFrame(dados_planilha)
     if not df.empty:
         df.columns = df.columns.str.strip()
         
-    propostas_valores = aba_propostas.get_all_values()
+    propostas_valores = carregar_propostas_cache()
     if len(propostas_valores) > 1:
         header_prop = [h.strip() for h in propostas_valores[0]]
         df_propostas = pd.DataFrame(propostas_valores[1:], columns=header_prop)
     else:
         df_propostas = pd.DataFrame(columns=['ID_Proposta', 'Cliente', 'Email', 'Produtos_Contratados', 'Valor_Total', 'Status', 'Observacoes', 'Data_Criacao', 'Ultimo_Acesso', 'Link_Proposta'])
 
-    todos_valores_user = aba_usuarios.get_all_values()
+    todos_valores_user = carregar_usuarios_cache()
     if len(todos_valores_user) <= 1:
         if len(todos_valores_user) == 0:
             aba_usuarios.append_row(['Usuario', 'Senha', 'Perfil', 'Primeiro Acesso', 'Cargo', 'Email', 'Telefone'])
@@ -89,6 +101,7 @@ try:
         ]
         for u in usuarios_iniciais:
             aba_usuarios.append_row(u)
+        st.cache_data.clear()
         todos_valores_user = aba_usuarios.get_all_values()
 
     header = [str(h).strip().lower() for h in todos_valores_user[0]]
@@ -152,6 +165,7 @@ if st.session_state["mudar_senha"]:
                 st.success("Senha alterada com sucesso!")
                 st.session_state["mudar_senha"] = False
                 st.cache_resource.clear()
+                st.cache_data.clear()
                 st.rerun()
     st.stop()
 
@@ -190,7 +204,7 @@ if menu == "📊 Dashboard":
         col3.metric("Confirmados", len(df_dash[df_dash['Status'].str.contains("confirmado", case=False, na=False)]))
         col4.metric("Recusados", len(df_dash[df_dash['Status'].str.contains("recusado", case=False, na=False)]))
 
-# 2. Nova Solicitação (Com Botão de Limpar Formulário)
+# 2. Nova Solicitação
 elif menu == "🛎️ Nova Solicitação":
     st.header("🛎️ Enviar Grupo para Vendas")
     
@@ -227,8 +241,9 @@ elif menu == "🛎️ Nova Solicitação":
                 aba_dados.append_row(nova_linha)
                 st.success("✅ Grupo registrado com sucesso!")
                 st.cache_resource.clear()
+                st.cache_data.clear()
 
-# 3. Gestão de Vendas & Proposta (Com Botão de Limpar Formulário)
+# 3. Gestão de Vendas & Proposta
 elif menu == "💼 Gestão de Vendas & Propostas":
     st.header("💼 Tratativa, Precificação e Envio de Proposta")
     if perfil not in ["Vendas", "Gerencial"]:
@@ -396,6 +411,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         st.markdown("### 🔗 Link Inteligente para Envio:")
                         st.code(link_rastreavel)
                         st.cache_resource.clear()
+                        st.cache_data.clear()
 
 # 4. Acompanhamento de Propostas
 elif menu == "📑 Acompanhamento de Propostas":
@@ -473,7 +489,7 @@ elif menu == "⚙️ Gerenciar Usuários" and perfil == "Gerencial":
             u_perfil = st.selectbox("Perfil de Acesso", ["Hotel", "Vendas", "Gerencial"])
             u_cargo = st.text_input("Cargo / Função (Ex: Gerente Geral)", value="Gerente Geral")
             u_email = st.text_input("E-mail Corporativo", value="catarina.costa@accor.com")
-            u_tel = st.text_input("Telefone / Contato", value="(11) 5085-5699")
+            u_tel = st.text_input("Telefone / Contacto", value="(11) 5085-5699")
             
             btn_salvar_user = st.form_submit_button("Salvar Usuário", type="primary")
             if btn_salvar_user:
@@ -483,3 +499,4 @@ elif menu == "⚙️ Gerenciar Usuários" and perfil == "Gerencial":
                     aba_usuarios.append_row([u_nome, u_senha, u_perfil, "Sim", u_cargo, u_email, u_tel])
                     st.success(f"✅ Usuário **{u_nome}** cadastrado com sucesso!")
                     st.cache_resource.clear()
+                    st.cache_data.clear()
