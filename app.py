@@ -46,8 +46,8 @@ def conectar_planilhas():
     try:
         aba_propostas = planilha.worksheet("Propostas")
     except:
-        aba_propostas = planilha.add_worksheet(title="Propostas", rows=100, cols=13)
-        aba_propostas.append_row(['ID_Proposta', 'Cliente', 'Email', 'Produtos_Contratados', 'Valor_Total', 'Status', 'Observacoes', 'Data_Criacao', 'Ultimo_Acesso', 'Nome_Usuario', 'Cargo_Usuario', 'Email_Usuario', 'Tel_Usuario'])
+        aba_propostas = planilha.add_worksheet(title="Propostas", rows=100, cols=14)
+        aba_propostas.append_row(['ID_Proposta', 'Cliente', 'Email', 'Produtos_Contratados', 'Valor_Total', 'Status', 'Observacoes', 'Data_Criacao', 'Ultimo_Acesso', 'Nome_Usuario', 'Cargo_Usuario', 'Email_Usuario', 'Tel_Usuario', 'Link_Proposta'])
 
     return aba_dados, aba_usuarios, aba_propostas
 
@@ -66,9 +66,10 @@ try:
         
     propostas_valores = aba_propostas.get_all_values()
     if len(propostas_valores) > 1:
-        df_propostas = pd.DataFrame(propostas_valores[1:], columns=propostas_valores[0])
+        header_prop = [h.strip() for h in propostas_valores[0]]
+        df_propostas = pd.DataFrame(propostas_valores[1:], columns=header_prop)
     else:
-        df_propostas = pd.DataFrame(columns=['ID_Proposta', 'Cliente', 'Email', 'Produtos_Contratados', 'Valor_Total', 'Status', 'Observacoes', 'Data_Criacao', 'Ultimo_Acesso'])
+        df_propostas = pd.DataFrame(columns=['ID_Proposta', 'Cliente', 'Email', 'Produtos_Contratados', 'Valor_Total', 'Status', 'Observacoes', 'Data_Criacao', 'Ultimo_Acesso', 'Link_Proposta'])
 
     todos_valores_user = aba_usuarios.get_all_values()
     if len(todos_valores_user) <= 1:
@@ -229,7 +230,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
         st.error("🔒 Acesso Restrito!")
     else:
         if df.empty:
-            st.warning("Não há grupos cadastrados.")
+            st.warning("Nenhum grupo cadastrado.")
         else:
             df['Status_Clean'] = df['Status'].astype(str).str.strip().str.lower()
             df_pendentes = df[~df['Status_Clean'].isin(['confirmado', 'recusado'])]
@@ -293,7 +294,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         aba_dados.update_cell(linha_planilha, 16, novo_status)
                         aba_dados.update_cell(linha_planilha, 17, novo_deadline.strftime("%d/%m/%Y") if novo_status == "Cotação enviada" else "")
                         
-                        # Constrói a tabela HTML detalhada com Tipologias, Diárias e Extras
+                        # Constrói a tabela HTML detalhada
                         tabela_html = "<h4>Tipologias de Apartamentos Oferecidas:</h4><ul>"
                         if tipologias_selecionadas:
                             for tp in tipologias_selecionadas:
@@ -315,38 +316,65 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         
                         id_prop = f"PROP-{id_sel}"
                         data_hj = datetime.now().strftime("%d/%m/%Y")
-                        
-                        aba_propostas.append_row([
-                            id_prop, linha_atual['Empresa'], linha_atual['E-mail'], tabela_html, 
-                            f"{receita_total * 1.05:,.2f}", novo_status, "", data_hj, "",
-                            st.session_state.get("usuario", "Equipe"),
-                            st.session_state.get("cargo", "Executivo(a) de Contas"),
-                            st.session_state.get("email_user", "catarina.costa@accor.com"),
-                            st.session_state.get("tel_user", "(11) 3016-9000")
-                        ])
-                        
-                        st.success(f"✅ Proposta gerada com sucesso! Valor Total com ISS: R$ {(receita_total * 1.05):,.2f}")
                         link_rastreavel = f"{URL_WEB_APP}?id={id_prop}&nome={linha_atual['Empresa'].replace(' ', '%20')}"
+                        
+                        # Verifica se já existe proposta para atualizar ou criar nova linha
+                        propostas_atuais = aba_propostas.get_all_values()
+                        achou = False
+                        for idx_p, p_row in enumerate(propostas_atuais[1:], start=2):
+                            if p_row[0] == id_prop:
+                                aba_propostas.update(f'A{idx_p}:N{idx_p}', [[
+                                    id_prop, linha_atual['Empresa'], linha_atual['E-mail'], tabela_html, 
+                                    f"{receita_total * 1.05:,.2f}", novo_status, "", data_hj, "",
+                                    st.session_state.get("usuario", "Equipe"),
+                                    st.session_state.get("cargo", "Executivo(a) de Contas"),
+                                    st.session_state.get("email_user", "catarina.costa@accor.com"),
+                                    st.session_state.get("tel_user", "(11) 3016-9000"),
+                                    link_rastreavel
+                                ]])
+                                achou = True
+                                break
+                        
+                        if not achou:
+                            aba_propostas.append_row([
+                                id_prop, linha_atual['Empresa'], linha_atual['E-mail'], tabela_html, 
+                                f"{receita_total * 1.05:,.2f}", novo_status, "", data_hj, "",
+                                st.session_state.get("usuario", "Equipe"),
+                                st.session_state.get("cargo", "Executivo(a) de Contas"),
+                                st.session_state.get("email_user", "catarina.costa@accor.com"),
+                                st.session_state.get("tel_user", "(11) 3016-9000"),
+                                link_rastreavel
+                            ])
+                        
+                        st.success(f"✅ Proposta gerada/atualizada com sucesso! Valor Total com ISS: R$ {(receita_total * 1.05):,.2f}")
+                        st.markdown("### 🔗 Link Inteligente para Envio:")
                         st.code(link_rastreavel)
                         st.cache_resource.clear()
 
-# 4. Acompanhamento de Propostas
+# 4. Acompanhamento de Propostas (Com Link Visível para Reenvio)
 elif menu == "📑 Acompanhamento de Propostas":
-    st.header("📑 Acompanhamento de Propostas Enviadas")
+    st.header("📑 Acompanhamento e Reenvio de Propostas")
     if df_propostas.empty:
         st.info("Nenhuma proposta registrada até o momento.")
     else:
         filtro_status = st.selectbox("Filtrar por Status da Proposta:", ["Todas", "Pendente", "Aceita pelo Cliente", "Em Ajuste / Solicitação", "Recusada"])
         df_exib = df_propostas if filtro_status == "Todas" else df_propostas[df_propostas['Status'] == filtro_status]
         
-        st.dataframe(
-            df_exib[['ID_Proposta', 'Cliente', 'Email', 'Valor_Total', 'Status', 'Observacoes', 'Data_Criacao', 'Ultimo_Acesso']].rename(columns={
-                'ID_Proposta': 'ID', 'Cliente': 'Empresa', 'Email': 'E-mail', 'Valor_Total': 'Valor (R$)', 
-                'Status': 'Status Proposta', 'Observacoes': 'Ajustes Solicitados', 'Data_Criacao': 'Criação', 'Ultimo_Acesso': 'Último Acesso'
-            }),
-            hide_index=True,
-            use_container_width=True
-        )
+        st.markdown("Aqui você pode acompanhar o status, ver as solicitações de ajustes e **copiar o link** caso precise reenviar a proposta ao cliente:")
+        
+        for idx, row in df_exib.iterrows():
+            with st.expander(f"📌 {row.get('Cliente', 'Cliente')} (ID: {row.get('ID_Proposta', '')}) - Status: **{row.get('Status', '')}**"):
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.write(f"**E-mail:** {row.get('Email', '')}")
+                    st.write(f"**Valor Total:** R$ {row.get('Valor_Total', '0.00')}")
+                    st.write(f"**Data de Criação:** {row.get('Data_Criacao', '')}")
+                with col_b:
+                    st.write(f"**Último Acesso do Cliente:** {row.get('Ultimo_Acesso', 'Nunca acessada')}")
+                    st.write(f"**Ajustes Solicitados:** {row.get('Observacoes', 'Nenhum ajuste pendente')}")
+                
+                st.markdown("**Link da Proposta (Copie para reenviar):**")
+                st.code(row.get('Link_Proposta', 'Link indisponível'))
 
 # 5. Follow-up
 elif menu == "👀 Follow-up":
@@ -365,13 +393,10 @@ elif menu == "👀 Follow-up":
 # 6. Gerenciar Usuários
 elif menu == "⚙️ Gerenciar Usuários" and perfil == "Gerencial":
     st.header("⚙️ Painel de Controle de Usuários")
-    
     tab_u1, tab_u2 = st.tabs(["📋 Usuários Cadastrados", "➕ Adicionar / Editar Perfil"])
-    
     with tab_u1:
         colunas_publicas = [c for c in df_usuarios.columns if c.lower() != 'senha']
         st.dataframe(df_usuarios[colunas_publicas], use_container_width=True)
-        
     with tab_u2:
         st.subheader("Cadastrar Novo Usuário ou Atualizar Perfil")
         with st.form("form_cad_usuario"):
