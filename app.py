@@ -6,7 +6,7 @@ from google.oauth2.service_account import Credentials
 import altair as alt
 import json
 
-st.set_page_config(page_title="CRM Grupos", page_icon="🏨", layout="wide")
+st.set_page_config(page_title="CRM Grupos & Propostas", page_icon="🏨", layout="wide")
 
 # 🌟 Estilo CSS para o efeito de piscar (blink) nos alertas
 st.markdown("""
@@ -31,6 +31,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1_vvU_tgDtHCqtoKG4xR5XMfmnujGTXf7pndgg_aQoX0/edit?gid=0#gid=0"
+URL_WEB_APP = "https://script.google.com/macros/s/AKfycbw275PCvf6y64BXlNyCJdRadKumDzQ9ohywd1tQ_f-1SjJMuSbwAOP1FWPs05fDzonp/exec"
 
 @st.cache_resource(ttl=30) 
 def conectar_planilhas():
@@ -42,10 +43,24 @@ def conectar_planilhas():
     planilha = cliente.open_by_url(URL_PLANILHA)
     aba_dados = planilha.worksheet("Dados")
     aba_usuarios = planilha.worksheet("Usuarios")
-    return aba_dados, aba_usuarios
+    
+    # Garante a existência das abas novas se não existirem
+    try:
+        aba_propostas = planilha.worksheet("Propostas")
+    except:
+        aba_propostas = planilha.add_worksheet(title="Propostas", rows=100, cols=10)
+        aba_propostas.append_row(['ID_Proposta', 'Cliente', 'Email', 'Produtos_Contratados', 'Valor_Total', 'Status', 'Observacoes', 'Data_Criacao', 'Ultimo_Acesso'])
+
+    try:
+        aba_produtos = planilha.worksheet("Produtos")
+    except:
+        aba_produtos = planilha.add_worksheet(title="Produtos", rows=50, cols=3)
+        aba_produtos.append_row(['ID', 'Produto', 'Valor_Padrao'])
+
+    return aba_dados, aba_usuarios, aba_propostas, aba_produtos
 
 try:
-    aba_dados, aba_usuarios = conectar_planilhas()
+    aba_dados, aba_usuarios, aba_propostas, aba_produtos = conectar_planilhas()
     
     dados_planilha = aba_dados.get_all_records(expected_headers=[
         'ID', 'Data Envio', 'Empresa', 'Contato', 'E-mail', 'Telefone', 
@@ -148,7 +163,7 @@ if st.session_state["mudar_senha"]:
 st.sidebar.button("Sair (Logout)", on_click=lambda: st.session_state.clear())
 
 # ------------------------------------------------
-# Alertas Automáticos com Efeito Piscando (Todos os Perfis)
+# Alertas Automáticos com Efeito Piscando
 # ------------------------------------------------
 if not df.empty:
     df['Status_Clean'] = df['Status'].astype(str).str.strip().str.lower()
@@ -183,7 +198,7 @@ if not df.empty:
             st.markdown(f'<div class="alerta-piscando">⚠️ AVISO OPERACIONAL: Há <b>{len(atraso_vendas)}</b> solicitações SEM TRATATIVA há mais de 2 dias úteis!</div>', unsafe_allow_html=True)
 
 # ------------------------------------------------
-# Menu Lateral por Perfil
+# Menu Lateral por Perfil (Adicionada a Aba de Propostas para Vendas/Gerencial)
 # ------------------------------------------------
 perfil = st.session_state["perfil"]
 usuario_atual = st.session_state["usuario"]
@@ -192,11 +207,11 @@ st.sidebar.caption(f"Perfil: {perfil}")
 
 opcoes_menu = []
 if perfil == "Gerencial":
-    opcoes_menu = ["📊 Dashboard", "🛎️ Nova Solicitação", "💼 Gestão de Vendas", "👀 Follow-up", "⚙️ Gerenciar Usuários"]
+    opcoes_menu = ["📊 Dashboard", "🛎️ Nova Solicitação", "💼 Gestão de Vendas", "💼 Gerar Proposta Comercial", "👀 Follow-up", "⚙️ Gerenciar Usuários"]
 elif perfil == "Hotel":
     opcoes_menu = ["🛎️ Nova Solicitação", "👀 Follow-up"]
 elif perfil == "Vendas":
-    opcoes_menu = ["📊 Dashboard", "💼 Gestão de Vendas", "👀 Follow-up"]
+    opcoes_menu = ["📊 Dashboard", "💼 Gestão de Vendas", "💼 Gerar Proposta Comercial", "👀 Follow-up"]
 
 menu = st.sidebar.radio("Navegação:", opcoes_menu)
 
@@ -208,7 +223,6 @@ if menu == "📊 Dashboard":
     if df.empty:
         st.info("Nenhum dado cadastrado.")
     else:
-        # Visão 1: Por Mês de Entrada (Solicitações)
         df['Data Envio'] = pd.to_datetime(df['Data Envio'], format='%d/%m/%Y', errors='coerce')
         df['Mês/Ano Envio'] = df['Data Envio'].dt.to_period('M').astype(str)
         
@@ -244,17 +258,13 @@ if menu == "📊 Dashboard":
             else:
                 st.info("Nenhuma recusa neste período.")
 
-        # Visão 2: Impacto na Ocupação (Por Mês de Check-in dos Confirmados)
         st.markdown("---")
         st.header("📈 Impacto na Ocupação (Por Mês de Check-in)")
-        st.markdown("Resumo financeiro e de quartos dos grupos **Confirmados**, alocados no mês em que o evento/hospedagem vai acontecer.")
-
         df_confirmados = df[df['Status_Clean'].str.contains("confirmado", na=False)].copy()
         if not df_confirmados.empty:
             df_confirmados['Checkin_Dt'] = pd.to_datetime(df_confirmados['Check-in'], format='%d/%m/%Y', errors='coerce')
             df_confirmados['Mes_Checkin'] = df_confirmados['Checkin_Dt'].dt.to_period('M').astype(str)
             
-            # Agrupa por Mês de Check-in
             resumo_checkin = df_confirmados.groupby('Mes_Checkin').agg(
                 Qtd_Grupos=('ID', 'count'),
                 Total_RN_Single=('Total RN Single', lambda x: pd.to_numeric(x, errors='coerce').sum()),
@@ -266,7 +276,6 @@ if menu == "📊 Dashboard":
             resumo_checkin['Total_RN_Geral'] = resumo_checkin['Total_RN_Single'] + resumo_checkin['Total_RN_Duplo'] + resumo_checkin['Total_RN_Triplo']
             resumo_checkin = resumo_checkin.sort_values('Mes_Checkin', ascending=False)
             
-            # Exibe tabela formatada
             st.dataframe(
                 resumo_checkin.rename(columns={
                     'Mes_Checkin': 'Mês de Check-in',
@@ -281,14 +290,12 @@ if menu == "📊 Dashboard":
                 use_container_width=True
             )
             
-            # Gráfico de Receita por Mês de Check-in
             grafico_impacto = alt.Chart(resumo_checkin).mark_bar(color='#2196F3').encode(
                 x=alt.X('Mes_Checkin:N', title='Mês de Check-in', sort='ascending'),
                 y=alt.Y('Receita_Prevista:Q', title='Receita Prevista (R$)'),
                 tooltip=['Mes_Checkin', 'Qtd_Grupos', 'Total_RN_Geral', 'Receita_Prevista']
             ).properties(title="Receita Confirmada por Mês de Hospedagem")
             st.altair_chart(grafico_impacto, use_container_width=True)
-            
         else:
             st.info("Ainda não há grupos confirmados para calcular o impacto na ocupação.")
 
@@ -432,7 +439,104 @@ elif menu == "💼 Gestão de Vendas":
                         st.cache_resource.clear()
 
 # ------------------------------------------------
-# 4. Follow-up
+# 4. Gerador de Proposta Comercial (Exclusivo Vendas)
+# ------------------------------------------------
+elif menu == "💼 Gerar Proposta Comercial":
+    st.header("💼 Emissão de Carta Acordo / Proposta Comercial")
+    
+    # Trava de Segurança garantindo que apenas Vendas ou Gerencial acessem
+    if perfil not in ["Vendas", "Gerencial"]:
+        st.error("🔒 **Acesso Restrito!** Apenas colaboradores da **Equipe de Vendas** podem gerar e enviar propostas comerciais.")
+    else:
+        st.success("✅ Acesso liberado para emissão de proposta.")
+        
+        # Seleciona lead existente ou preenche manualmente
+        if not df.empty:
+            lista_leads = df['ID'].astype(str) + " - " + df['Empresa']
+            lead_escolhido = st.selectbox("Selecione a Solicitação / Lead:", ["Nova / Manual"] + lista_leads.tolist())
+        else:
+            lead_escolhido = "Nova / Manual"
+
+        if lead_escolhido != "Nova / Manual":
+            id_l = lead_escolhido.split(" - ")[0]
+            dados_lead = df[df['ID'] == id_l].iloc[0]
+            nome_empresa = dados_lead['Empresa']
+            email_empresa = dados_lead['E-mail']
+        else:
+            nome_empresa = st.text_input("Nome da Empresa / Cliente")
+            email_empresa = st.text_input("E-mail do Cliente")
+
+        st.markdown("---")
+        st.subheader("📦 Seleção de Produtos e Serviços (Ibis Budget Paraíso)")
+        
+        # Lista completa baseada exatamente na imagem que você enviou
+        produtos_disponiveis = [
+            "Hospedagem Single (Diária) Apartamento DBD",
+            "Hospedagem Duplo (Diária) Apartamento DBD",
+            "Hospedagem Single (Diária) Apartamento DBC",
+            "Hospedagem Duplo (Diária) Apartamento DBC",
+            "Hospedagem Triplo (Diária) Apartamento DBC",
+            "Hospedagem Single (Diária) Apartamento TWC",
+            "Hospedagem Duplo (Diária) Apartamento TWC",
+            "Hospedagem Single (Diária) Apartamento ROH",
+            "Hospedagem Duplo (Diária) Apartamento ROH",
+            "Hospedagem Single (Diária) Apartamento S2D",
+            "Hospedagem Duplo (Diária) Apartamento S2D",
+            "Hospedagem Triplo (Diária) Apartamento S2D",
+            "Café da manhã",
+            "Almoço Buffet",
+            "Jantar Buffet",
+            "Almoço Três tempos",
+            "Jantar Três tempos",
+            "Abertura de Porta",
+            "Late Check-out",
+            "Guarda Volumes"
+        ]
+        
+        escolhidos = st.multiselect("Selecione os itens contratados para o grupo:", produtos_disponiveis)
+        
+        tabela_itens = []
+        valor_total_proposta = 0.0
+        
+        if escolhidos:
+            st.markdown("### 💵 Precificação dos Itens Selecionados")
+            for item in escolhidos:
+                c1, c2, c3 = st.columns([3, 1, 1])
+                with c1:
+                    st.write(f"**{item}**")
+                with c2:
+                    qtd = st.number_input(f"Qtd / Diárias", min_value=1, value=1, key=f"qtd_{item}")
+                with c3:
+                    preco = st.number_input(f"Valor Unit. (R$)", min_value=0.0, value=150.0, step=10.0, key=f"val_{item}")
+                
+                subtotal = qtd * preco
+                valor_total_proposta += subtotal
+                tabela_itens.append(f"{qtd}x {item} (R$ {subtotal:.2f})")
+            
+            st.markdown(f"### 💰 **Valor Total da Proposta: R$ {valor_total_proposta:,.2f}**")
+            
+            if st.button("🚀 Gerar Link Inteligente e Salvar Proposta", type="primary"):
+                if not nome_empresa or not email_empresa:
+                    st.warning("Preencha o Nome e o E-mail do cliente.")
+                else:
+                    id_prop = "PROP-" + datetime.now().strftime("%H%M%S")
+                    resumo_str = " | ".join(tabela_itens)
+                    
+                    # Salva na aba Propostas do Google Sheets
+                    aba_propostas.append_row([
+                        id_prop, nome_empresa, email_empresa, resumo_str, 
+                        valor_total_proposta, "Pendente", "", datetime.now().strftime("%d/%m/%Y"), ""
+                    ])
+                    
+                    # Gera o link rastreável que dispara o e-mail para a Catarina e redireciona
+                    link_rastreavel = f"{URL_WEB_APP}?id={id_prop}&nome={nome_empresa.replace(' ', '%20')}"
+                    
+                    st.success("🎉 Proposta gerada com sucesso e salva na planilha!")
+                    st.markdown("Envie o link abaixo para o cliente:")
+                    st.code(link_rastreavel)
+
+# ------------------------------------------------
+# 5. Follow-up
 # ------------------------------------------------
 elif menu == "👀 Follow-up":
     st.header("👀 Acompanhamento da Operação")
@@ -487,7 +591,7 @@ elif menu == "👀 Follow-up":
                 st.info("Nenhum grupo confirmado ainda.")
 
 # ------------------------------------------------
-# 5. Gerenciar Usuários (Apenas Gerência)
+# 6. Gerenciar Usuários (Apenas Gerencial)
 # ------------------------------------------------
 elif menu == "⚙️ Gerenciar Usuários" and perfil == "Gerencial":
     st.header("⚙️ Painel de Controle de Usuários")
