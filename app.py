@@ -381,7 +381,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     st.code(link_rastreavel)
                     st.cache_resource.clear()
 
-# 4. Acompanhamento de Propostas
+# 4. Acompanhamento de Propostas (Garante o link mesmo para propostas antigas)
 elif menu == "📑 Acompanhamento de Propostas":
     st.header("📑 Acompanhamento e Reenvio de Propostas")
     if df_propostas.empty:
@@ -408,7 +408,15 @@ elif menu == "📑 Acompanhamento de Propostas":
         else:
             st.markdown(f"Exibindo **{len(df_exib)}** proposta(s):")
             for idx, row in df_exib.iterrows():
-                with st.expander(f"📌 {row.get('Cliente', 'Cliente')} (ID: {row.get('ID_Proposta', '')}) - Status: **{row.get('Status', '')}**"):
+                id_p = row.get('ID_Proposta', '')
+                cliente_p = row.get('Cliente', 'Cliente')
+                
+                # Reconstrói o link automaticamente se a coluna estiver em branco ou indisponível
+                link_proposta = row.get('Link_Proposta', '')
+                if not link_proposta or str(link_proposta).strip() == "" or str(link_proposta).lower() == "nan":
+                    link_proposta = f"{URL_WEB_APP}?id={id_p}&nome={str(cliente_p).replace(' ', '%20')}"
+                
+                with st.expander(f"📌 {cliente_p} (ID: {id_p}) - Status: **{row.get('Status', '')}**"):
                     col_a, col_b = st.columns(2)
                     with col_a:
                         st.write(f"**E-mail:** {row.get('Email', '')}")
@@ -419,7 +427,7 @@ elif menu == "📑 Acompanhamento de Propostas":
                         st.write(f"**Ajustes Solicitados:** {row.get('Observacoes', 'Nenhum ajuste pendente')}")
                     
                     st.markdown("**Link da Proposta (Copie para reenviar):**")
-                    st.code(row.get('Link_Proposta', 'Link indisponível'))
+                    st.code(link_proposta)
 
 # 5. Follow-up
 elif menu == "👀 Follow-up":
