@@ -197,7 +197,7 @@ if not df.empty:
             st.markdown(f'<div class="alerta-piscando">⚠️ AVISO OPERACIONAL: Há <b>{len(atraso_vendas)}</b> solicitações SEM TRATATIVA há mais de 2 dias úteis!</div>', unsafe_allow_html=True)
 
 # ------------------------------------------------
-# Menu Lateral por Perfil (Unificado)
+# Menu Lateral por Perfil
 # ------------------------------------------------
 perfil = st.session_state["perfil"]
 usuario_atual = st.session_state["usuario"]
@@ -352,7 +352,7 @@ elif menu == "🛎️ Nova Solicitação":
         st.error("O Check-out deve ser maior que o Check-in.")
 
 # ------------------------------------------------
-# 3. Gestão de Vendas & Emissão de Proposta (Unificado)
+# 3. Gestão de Vendas & Emissão de Proposta (Unificado com Tipologias)
 # ------------------------------------------------
 elif menu == "💼 Gestão de Vendas & Propostas":
     st.header("💼 Tratativa, Precificação e Envio de Proposta")
@@ -408,22 +408,23 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     with col3: t_triplo = st.number_input("Tarifa Triplo (R$)", value=float(linha_atual.get('Tarifa Triplo', 0) or 0))
                     
                     st.markdown("---")
-                    st.subheader("2. Seleção de Produtos Extras & Serviços (Opcional)")
+                    st.subheader("2. Tipologias e Categorias Disponíveis para o Grupo")
+                    st.markdown("Selecione quais tipologias/configurações estarão disponíveis e serão exibidas na proposta:")
                     
-                    # Lista exata dos produtos da imagem oficial
-                    produtos_disponiveis = [
-                        "Hospedagem Single (Diária) Apartamento DBD",
-                        "Hospedagem Duplo (Diária) Apartamento DBD",
-                        "Hospedagem Single (Diária) Apartamento DBC",
-                        "Hospedagem Duplo (Diária) Apartamento DBC",
-                        "Hospedagem Triplo (Diária) Apartamento DBC",
-                        "Hospedagem Single (Diária) Apartamento TWC",
-                        "Hospedagem Duplo (Diária) Apartamento TWC",
-                        "Hospedagem Single (Diária) Apartamento ROH",
-                        "Hospedagem Duplo (Diária) Apartamento ROH",
-                        "Hospedagem Single (Diária) Apartamento S2D",
-                        "Hospedagem Duplo (Diária) Apartamento S2D",
-                        "Hospedagem Triplo (Diária) Apartamento S2D",
+                    tipologias_opcoes = [
+                        "DBD/Standard – 01 cama de casal (01 a 02 pessoas)",
+                        "DBC/Standard – 01 cama de casal e 01 cama de solteiro (01 a 03 pessoas)",
+                        "TWC/Standard – 02 camas de solteiro (01 a 02 pessoas)",
+                        "ROH/Superior – 01 cama de casal (01 a 02 pessoas)",
+                        "S2D/Superior – 01 cama de casal e 01 cama de solteiro (01 a 03 pessoas)"
+                    ]
+                    
+                    tipologias_selecionadas = st.multiselect("Tipologias de Apartamentos Oferecidas:", tipologias_opcoes)
+
+                    st.markdown("---")
+                    st.subheader("3. Produtos Extras & Serviços (Catering e Opcionais)")
+                    
+                    extras_opcoes = [
                         "Café da manhã",
                         "Almoço Buffet",
                         "Jantar Buffet",
@@ -434,11 +435,11 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         "Guarda Volumes"
                     ]
                     
-                    extras_selecionados = st.multiselect("Selecione itens adicionais para esta proposta:", produtos_disponiveis)
+                    extras_selecionados = st.multiselect("Selecione itens adicionais:", extras_opcoes)
                     
                     extras_dados = []
                     if extras_selecionados:
-                        st.markdown("*(Defina a quantidade e valor unitário para os extras)*")
+                        st.markdown("*(Defina a quantidade e o valor unitário para os extras)*")
                         for ext in extras_selecionados:
                             ec1, ec2, ec3 = st.columns([3, 1, 1])
                             with ec1: st.write(f"**{ext}**")
@@ -447,7 +448,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                             extras_dados.append({"Item": ext, "Qtd": q_ext, "Valor": v_ext, "Subtotal": q_ext * v_ext})
 
                     st.markdown("---")
-                    st.subheader("3. Ação Comercial e Status")
+                    st.subheader("4. Ação Comercial e Status")
                     novo_status = st.radio("Mudar status para:", ["Cotação enviada", "Confirmado", "Recusado"], horizontal=True)
                     
                     c_data, c_motivo = st.columns(2)
@@ -460,16 +461,12 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         if novo_status == "Recusado" and motivo == "":
                             st.error("⚠️ Escolha um motivo de recusa.")
                         else:
-                            # Cálculo da receita de hospedagem padrão
                             receita_hospedagem = (rn_s * t_single) + (rn_d * t_duplo) + (rn_t * t_triplo)
-                            
-                            # Soma os extras se houver
                             receita_extras = sum([item["Subtotal"] for item in extras_dados])
                             receita_total = receita_hospedagem + receita_extras
                             
                             linha_planilha = df[df['ID'] == id_sel].index[0] + 2
                             
-                            # Atualiza na aba Dados
                             aba_dados.update_cell(linha_planilha, 12, t_single)
                             aba_dados.update_cell(linha_planilha, 13, t_duplo)
                             aba_dados.update_cell(linha_planilha, 14, t_triplo)
@@ -486,18 +483,26 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                                 aba_dados.update_cell(linha_planilha, 17, "") 
                                 aba_dados.update_cell(linha_planilha, 18, "") 
                             
-                            # Monta o resumo dos produtos para a Proposta
+                            # Monta o resumo estruturado para a Proposta
                             resumo_partes = []
-                            if rn_s > 0: resumo_partes.append(f"{rn_s}x Hospedagem Single (R$ {t_single:.2f})")
-                            if rn_d > 0: resumo_partes.append(f"{rn_d}x Hospedagem Duplo (R$ {t_duplo:.2f})")
-                            if rn_t > 0: resumo_partes.append(f"{rn_t}x Hospedagem Triplo (R$ {t_triplo:.2f})")
-                            for ex in extras_dados:
-                                resumo_partes.append(f"{ex['Qtd']}x {ex['Item']} (R$ {ex['Subtotal']:.2f})")
+                            if tipologias_selecionadas:
+                                resumo_partes.append("--- TIPOLOGIAS OFERECIDAS ---")
+                                for tip in tipologias_selecionadas:
+                                    resumo_partes.append(f"• {tip}")
+                            
+                            resumo_partes.append("--- TARIFAS DE HOSPEDAGEM ---")
+                            if rn_s > 0: resumo_partes.append(f"{rn_s}x Diária Single (R$ {t_single:.2f})")
+                            if rn_d > 0: resumo_partes.append(f"{rn_d}x Diária Dupla (R$ {t_duplo:.2f})")
+                            if rn_t > 0: resumo_partes.append(f"{rn_t}x Diária Tripla (R$ {t_triplo:.2f})")
+                            
+                            if extras_dados:
+                                resumo_partes.append("--- PRODUTOS EXTRAS & SERVIÇOS ---")
+                                for ex in extras_dados:
+                                    resumo_partes.append(f"{ex['Qtd']}x {ex['Item']} (R$ {ex['Subtotal']:.2f})")
                             
                             resumo_str = " | ".join(resumo_partes)
                             id_prop = f"PROP-{id_sel}"
                             
-                            # Salva na aba Propostas
                             aba_propostas.append_row([
                                 id_prop, linha_atual['Empresa'], linha_atual['E-mail'], resumo_str, 
                                 receita_total, novo_status, "", datetime.now().strftime("%d/%m/%Y"), ""
@@ -505,7 +510,6 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                             
                             st.success(f"✅ Tratativa salva! Receita Total: R$ {receita_total:,.2f}")
                             
-                            # Gera o link inteligente rastreável
                             link_rastreavel = f"{URL_WEB_APP}?id={id_prop}&nome={linha_atual['Empresa'].replace(' ', '%20')}"
                             st.markdown("### 🔗 Link Inteligente da Proposta Gerado:")
                             st.code(link_rastreavel)
