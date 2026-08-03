@@ -261,7 +261,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         "ROH/Superior – 01 cama de casal (01 a 02 pessoas)",
                         "S2D/Superior – 01 cama de casal e 01 cama de solteiro (01 a 03 pessoas)"
                     ]
-                    tipologias_selecionadas = st.multiselect("Tipologias de Apartamentos:", tipologias_opcoes)
+                    tipologias_selecionadas = st.multiselect("Tipologias de Apartamentos Disponíveis:", tipologias_opcoes)
 
                     st.subheader("3. Produtos Extras & Serviços")
                     extras_opcoes = ["Café da manhã", "Almoço Buffet", "Jantar Buffet", "Almoço Três tempos", "Jantar Três tempos", "Abertura de Porta", "Late Check-out", "Guarda Volumes"]
@@ -293,7 +293,18 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         aba_dados.update_cell(linha_planilha, 16, novo_status)
                         aba_dados.update_cell(linha_planilha, 17, novo_deadline.strftime("%d/%m/%Y") if novo_status == "Cotação enviada" else "")
                         
-                        tabela_html = "<table><tr><th>Serviço / Acomodação</th><th>Qtd / RN</th><th>Valor Unit.</th><th>Subtotal (com ISS 5%)</th></tr>"
+                        # Constrói a tabela HTML detalhada com Tipologias, Diárias e Extras
+                        tabela_html = "<h4>Tipologias de Apartamentos Oferecidas:</h4><ul>"
+                        if tipologias_selecionadas:
+                            for tp in tipologias_selecionadas:
+                                tabela_html += f"<li><b>{tp}</b></li>"
+                        else:
+                            tabela_html += "<li>Nenhuma tipologia específica selecionada.</li>"
+                        tabela_html += "</ul><br>"
+
+                        tabela_html += "<h4>Discriminação de Valores (Com ISS 5%):</h4>"
+                        tabela_html += "<table><tr><th>Serviço / Acomodação</th><th>Qtd / RN</th><th>Valor Unit. NET</th><th>Subtotal (com ISS 5%)</th></tr>"
+                        
                         if rn_s > 0: tabela_html += f"<tr><td>Diária Single</td><td>{rn_s}</td><td>R$ {t_single:.2f}</td><td>R$ {(rn_s * t_single * 1.05):.2f}</td></tr>"
                         if rn_d > 0: tabela_html += f"<tr><td>Diária Dupla</td><td>{rn_d}</td><td>R$ {t_duplo:.2f}</td><td>R$ {(rn_d * t_duplo * 1.05):.2f}</td></tr>"
                         if rn_t > 0: tabela_html += f"<tr><td>Diária Tripla</td><td>{rn_t}</td><td>R$ {t_triplo:.2f}</td><td>R$ {(rn_t * t_triplo * 1.05):.2f}</td></tr>"
@@ -351,14 +362,13 @@ elif menu == "👀 Follow-up":
         with t3:
             st.dataframe(df[df['Status_Clean'].str.contains("confirmado", na=False)][['Check-in', 'Check-out', 'Empresa', 'Receita Total']], use_container_width=True)
 
-# 6. Gerenciar Usuários (Com Senhas Ocultas)
+# 6. Gerenciar Usuários
 elif menu == "⚙️ Gerenciar Usuários" and perfil == "Gerencial":
     st.header("⚙️ Painel de Controle de Usuários")
     
     tab_u1, tab_u2 = st.tabs(["📋 Usuários Cadastrados", "➕ Adicionar / Editar Perfil"])
     
     with tab_u1:
-        # Exibe a tabela ocultando a coluna de Senhas por segurança
         colunas_publicas = [c for c in df_usuarios.columns if c.lower() != 'senha']
         st.dataframe(df_usuarios[colunas_publicas], use_container_width=True)
         
