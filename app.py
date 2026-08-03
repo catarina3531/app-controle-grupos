@@ -31,7 +31,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1_vvU_tgDtHCqtoKG4xR5XMfmnujGTXf7pndgg_aQoX0/edit?gid=0#gid=0"
-URL_WEB_APP = "https://script.google.com/macros/s/AKfycbw275PCvf6y64BXlNyCJdRadKumDzQ9ohywd1tQ_f-1SjJMuSbwAOP1FWPs05fDzonp/exec"
+URL_WEB_APP = "https://script.google.com/macros/s/AKfycbz7vQ65GWPeo1_qJpngvHkYG3G_GMmo_XYdsT-RSzcMisSHz70rtik3ftANwA3KGme1SQ/exec"
 
 @st.cache_resource(ttl=30) 
 def conectar_planilhas():
@@ -44,7 +44,7 @@ def conectar_planilhas():
     aba_dados = planilha.worksheet("Dados")
     aba_usuarios = planilha.worksheet("Usuarios")
     
-    # Garante a existência das abas novas se não existirem
+    # Garante a existência das abas novas na Base_Grupos_App se não existirem
     try:
         aba_propostas = planilha.worksheet("Propostas")
     except:
@@ -198,7 +198,7 @@ if not df.empty:
             st.markdown(f'<div class="alerta-piscando">⚠️ AVISO OPERACIONAL: Há <b>{len(atraso_vendas)}</b> solicitações SEM TRATATIVA há mais de 2 dias úteis!</div>', unsafe_allow_html=True)
 
 # ------------------------------------------------
-# Menu Lateral por Perfil (Adicionada a Aba de Propostas para Vendas/Gerencial)
+# Menu Lateral por Perfil
 # ------------------------------------------------
 perfil = st.session_state["perfil"]
 usuario_atual = st.session_state["usuario"]
@@ -444,13 +444,11 @@ elif menu == "💼 Gestão de Vendas":
 elif menu == "💼 Gerar Proposta Comercial":
     st.header("💼 Emissão de Carta Acordo / Proposta Comercial")
     
-    # Trava de Segurança garantindo que apenas Vendas ou Gerencial acessem
     if perfil not in ["Vendas", "Gerencial"]:
         st.error("🔒 **Acesso Restrito!** Apenas colaboradores da **Equipe de Vendas** podem gerar e enviar propostas comerciais.")
     else:
         st.success("✅ Acesso liberado para emissão de proposta.")
         
-        # Seleciona lead existente ou preenche manualmente
         if not df.empty:
             lista_leads = df['ID'].astype(str) + " - " + df['Empresa']
             lead_escolhido = st.selectbox("Selecione a Solicitação / Lead:", ["Nova / Manual"] + lista_leads.tolist())
@@ -469,7 +467,6 @@ elif menu == "💼 Gerar Proposta Comercial":
         st.markdown("---")
         st.subheader("📦 Seleção de Produtos e Serviços (Ibis Budget Paraíso)")
         
-        # Lista completa baseada exatamente na imagem que você enviou
         produtos_disponiveis = [
             "Hospedagem Single (Diária) Apartamento DBD",
             "Hospedagem Duplo (Diária) Apartamento DBD",
@@ -522,13 +519,13 @@ elif menu == "💼 Gerar Proposta Comercial":
                     id_prop = "PROP-" + datetime.now().strftime("%H%M%S")
                     resumo_str = " | ".join(tabela_itens)
                     
-                    # Salva na aba Propostas do Google Sheets
+                    # Salva na aba Propostas da planilha unificada Base_Grupos_App
                     aba_propostas.append_row([
                         id_prop, nome_empresa, email_empresa, resumo_str, 
                         valor_total_proposta, "Pendente", "", datetime.now().strftime("%d/%m/%Y"), ""
                     ])
                     
-                    # Gera o link rastreável que dispara o e-mail para a Catarina e redireciona
+                    # Gera o link rastreável com a nova URL configurada
                     link_rastreavel = f"{URL_WEB_APP}?id={id_prop}&nome={nome_empresa.replace(' ', '%20')}"
                     
                     st.success("🎉 Proposta gerada com sucesso e salva na planilha!")
