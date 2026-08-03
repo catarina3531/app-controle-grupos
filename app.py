@@ -8,7 +8,7 @@ import json
 
 st.set_page_config(page_title="CRM Grupos & Propostas", page_icon="🏨", layout="wide")
 
-# 🌟 Estilo CSS para o efeito de piscar (blink) nos alertas
+# 🌟 Estilo CSS para o efeito de piscar nos alertas
 st.markdown("""
     <style>
     @keyframes piscar {
@@ -44,7 +44,6 @@ def conectar_planilhas():
     aba_dados = planilha.worksheet("Dados")
     aba_usuarios = planilha.worksheet("Usuarios")
     
-    # Garante a existência das abas novas na Base_Grupos_App se não existirem
     try:
         aba_propostas = planilha.worksheet("Propostas")
     except:
@@ -198,7 +197,7 @@ if not df.empty:
             st.markdown(f'<div class="alerta-piscando">⚠️ AVISO OPERACIONAL: Há <b>{len(atraso_vendas)}</b> solicitações SEM TRATATIVA há mais de 2 dias úteis!</div>', unsafe_allow_html=True)
 
 # ------------------------------------------------
-# Menu Lateral por Perfil
+# Menu Lateral por Perfil (Unificado)
 # ------------------------------------------------
 perfil = st.session_state["perfil"]
 usuario_atual = st.session_state["usuario"]
@@ -207,11 +206,11 @@ st.sidebar.caption(f"Perfil: {perfil}")
 
 opcoes_menu = []
 if perfil == "Gerencial":
-    opcoes_menu = ["📊 Dashboard", "🛎️ Nova Solicitação", "💼 Gestão de Vendas", "💼 Gerar Proposta Comercial", "👀 Follow-up", "⚙️ Gerenciar Usuários"]
+    opcoes_menu = ["📊 Dashboard", "🛎️ Nova Solicitação", "💼 Gestão de Vendas & Propostas", "👀 Follow-up", "⚙️ Gerenciar Usuários"]
 elif perfil == "Hotel":
     opcoes_menu = ["🛎️ Nova Solicitação", "👀 Follow-up"]
 elif perfil == "Vendas":
-    opcoes_menu = ["📊 Dashboard", "💼 Gestão de Vendas", "💼 Gerar Proposta Comercial", "👀 Follow-up"]
+    opcoes_menu = ["📊 Dashboard", "💼 Gestão de Vendas & Propostas", "👀 Follow-up"]
 
 menu = st.sidebar.radio("Navegação:", opcoes_menu)
 
@@ -347,193 +346,173 @@ elif menu == "🛎️ Nova Solicitação":
                     "Enviado para time de vendas", "", "", mapa_str
                 ]
                 aba_dados.append_row(nova_linha)
-                st.success("✅ Grupo registrado! A equipe de vendas já pode definir as tarifas.")
+                st.success("✅ Grupo registrado! A equipe de vendas já pode definir as tarifas e emitir a proposta.")
                 st.cache_resource.clear() 
     else:
         st.error("O Check-out deve ser maior que o Check-in.")
 
 # ------------------------------------------------
-# 3. Gestão de Vendas (Comercial)
+# 3. Gestão de Vendas & Emissão de Proposta (Unificado)
 # ------------------------------------------------
-elif menu == "💼 Gestão de Vendas":
-    st.header("💼 Tratativa e Precificação de Grupos")
-    
-    if df.empty:
-        st.warning("Não há grupos.")
-    else:
-        df_pendentes = df[~df['Status_Clean'].isin(['confirmado', 'recusado'])]
-        
-        if df_pendentes.empty:
-            st.success("Nenhum grupo pendente no momento!")
-        else:
-            opcoes = df_pendentes['ID'].astype(str) + " - " + df_pendentes['Empresa'] + " (" + df_pendentes['Status'] + ")"
-            grupo_sel = st.selectbox("Escolha o Grupo para tratar:", opcoes)
-            
-            id_sel = grupo_sel.split(" - ")[0]
-            linha_atual = df_pendentes[df_pendentes['ID'] == id_sel].iloc[0]
-            
-            st.markdown("---")
-            st.subheader(f"📋 Informações da Solicitação: {linha_atual['Empresa']}")
-            c_info1, c_info2 = st.columns(2)
-            with c_info1:
-                st.markdown(f"**Contato:** {linha_atual['Contato']}")
-                st.markdown(f"**E-mail:** {linha_atual['E-mail']}")
-                st.markdown(f"**Telefone:** {linha_atual['Telefone']}")
-            with c_info2:
-                st.markdown(f"**Data de Envio:** {linha_atual['Data Envio']}")
-                st.markdown(f"**Período:** {linha_atual['Check-in']} até {linha_atual['Check-out']}")
-            
-            mapa_json = linha_atual.get('Mapa de Quartos', '')
-            if mapa_json:
-                try:
-                    mapa_lista = json.loads(mapa_json)
-                    df_mapa = pd.DataFrame(mapa_lista)
-                    st.markdown("**📅 Distribuição Diária de Quartos solicitada pelo Hotel:**")
-                    st.dataframe(df_mapa, hide_index=True, use_container_width=True)
-                except:
-                    pass
-            st.markdown("---")
-
-            rn_s = int(linha_atual['Total RN Single'] or 0)
-            rn_d = int(linha_atual['Total RN Duplo'] or 0)
-            rn_t = int(linha_atual['Total RN Triplo'] or 0)
-            
-            with st.form("form_vendas"):
-                st.subheader("1. Definição de Tarifas")
-                col1, col2, col3 = st.columns(3)
-                with col1: t_single = st.number_input("Tarifa Single (R$)", value=float(linha_atual.get('Tarifa Single', 0) or 0))
-                with col2: t_duplo = st.number_input("Tarifa Duplo (R$)", value=float(linha_atual.get('Tarifa Duplo', 0) or 0))
-                with col3: t_triplo = st.number_input("Tarifa Triplo (R$)", value=float(linha_atual.get('Tarifa Triplo', 0) or 0))
-                
-                st.subheader("2. Ação de Vendas")
-                novo_status = st.radio("Mudar status para:", ["Cotação enviada", "Confirmado", "Recusado"], horizontal=True)
-                
-                c_data, c_motivo = st.columns(2)
-                with c_data: novo_deadline = st.date_input("Deadline (Se cotação)", value=date.today())
-                with c_motivo: motivo = st.selectbox("Motivo (Se recusado)", ["", "Preço", "Estrutura", "Não informado", "Sem disponibilidade"])
-                
-                if st.form_submit_button("💾 Salvar e Calcular Receita", type="primary"):
-                    if novo_status == "Recusado" and motivo == "":
-                        st.error("⚠️ Escolha um motivo de recusa.")
-                    else:
-                        receita_total = (rn_s * t_single) + (rn_d * t_duplo) + (rn_t * t_triplo)
-                        linha_planilha = df[df['ID'] == id_sel].index[0] + 2
-                        
-                        aba_dados.update_cell(linha_planilha, 12, t_single)
-                        aba_dados.update_cell(linha_planilha, 13, t_duplo)
-                        aba_dados.update_cell(linha_planilha, 14, t_triplo)
-                        aba_dados.update_cell(linha_planilha, 15, receita_total)
-                        aba_dados.update_cell(linha_planilha, 16, novo_status)
-                        
-                        if novo_status == "Cotação enviada":
-                            aba_dados.update_cell(linha_planilha, 17, novo_deadline.strftime("%d/%m/%Y"))
-                            aba_dados.update_cell(linha_planilha, 18, "")
-                        elif novo_status == "Recusado":
-                            aba_dados.update_cell(linha_planilha, 17, "") 
-                            aba_dados.update_cell(linha_planilha, 18, motivo)
-                        elif novo_status == "Confirmado":
-                            aba_dados.update_cell(linha_planilha, 17, "") 
-                            aba_dados.update_cell(linha_planilha, 18, "") 
-                            
-                        st.success(f"✅ Atualizado! Receita calculada: R$ {receita_total:,.2f}")
-                        st.cache_resource.clear()
-
-# ------------------------------------------------
-# 4. Gerador de Proposta Comercial (Exclusivo Vendas)
-# ------------------------------------------------
-elif menu == "💼 Gerar Proposta Comercial":
-    st.header("💼 Emissão de Carta Acordo / Proposta Comercial")
+elif menu == "💼 Gestão de Vendas & Propostas":
+    st.header("💼 Tratativa, Precificação e Envio de Proposta")
     
     if perfil not in ["Vendas", "Gerencial"]:
-        st.error("🔒 **Acesso Restrito!** Apenas colaboradores da **Equipe de Vendas** podem gerar e enviar propostas comerciais.")
+        st.error("🔒 **Acesso Restrito!** Apenas colaboradores da **Equipe de Vendas** podem precificar e emitir propostas comerciais.")
     else:
-        st.success("✅ Acesso liberado para emissão de proposta.")
-        
-        if not df.empty:
-            lista_leads = df['ID'].astype(str) + " - " + df['Empresa']
-            lead_escolhido = st.selectbox("Selecione a Solicitação / Lead:", ["Nova / Manual"] + lista_leads.tolist())
+        if df.empty:
+            st.warning("Não há grupos cadastrados.")
         else:
-            lead_escolhido = "Nova / Manual"
-
-        if lead_escolhido != "Nova / Manual":
-            id_l = lead_escolhido.split(" - ")[0]
-            dados_lead = df[df['ID'] == id_l].iloc[0]
-            nome_empresa = dados_lead['Empresa']
-            email_empresa = dados_lead['E-mail']
-        else:
-            nome_empresa = st.text_input("Nome da Empresa / Cliente")
-            email_empresa = st.text_input("E-mail do Cliente")
-
-        st.markdown("---")
-        st.subheader("📦 Seleção de Produtos e Serviços (Ibis Budget Paraíso)")
-        
-        produtos_disponiveis = [
-            "Hospedagem Single (Diária) Apartamento DBD",
-            "Hospedagem Duplo (Diária) Apartamento DBD",
-            "Hospedagem Single (Diária) Apartamento DBC",
-            "Hospedagem Duplo (Diária) Apartamento DBC",
-            "Hospedagem Triplo (Diária) Apartamento DBC",
-            "Hospedagem Single (Diária) Apartamento TWC",
-            "Hospedagem Duplo (Diária) Apartamento TWC",
-            "Hospedagem Single (Diária) Apartamento ROH",
-            "Hospedagem Duplo (Diária) Apartamento ROH",
-            "Hospedagem Single (Diária) Apartamento S2D",
-            "Hospedagem Duplo (Diária) Apartamento S2D",
-            "Hospedagem Triplo (Diária) Apartamento S2D",
-            "Café da manhã",
-            "Almoço Buffet",
-            "Jantar Buffet",
-            "Almoço Três tempos",
-            "Jantar Três tempos",
-            "Abertura de Porta",
-            "Late Check-out",
-            "Guarda Volumes"
-        ]
-        
-        escolhidos = st.multiselect("Selecione os itens contratados para o grupo:", produtos_disponiveis)
-        
-        tabela_itens = []
-        valor_total_proposta = 0.0
-        
-        if escolhidos:
-            st.markdown("### 💵 Precificação dos Itens Selecionados")
-            for item in escolhidos:
-                c1, c2, c3 = st.columns([3, 1, 1])
-                with c1:
-                    st.write(f"**{item}**")
-                with c2:
-                    qtd = st.number_input(f"Qtd / Diárias", min_value=1, value=1, key=f"qtd_{item}")
-                with c3:
-                    preco = st.number_input(f"Valor Unit. (R$)", min_value=0.0, value=150.0, step=10.0, key=f"val_{item}")
+            df_pendentes = df[~df['Status_Clean'].isin(['confirmado', 'recusado'])]
+            
+            if df_pendentes.empty:
+                st.success("Nenhum grupo pendente no momento!")
+            else:
+                opcoes = df_pendentes['ID'].astype(str) + " - " + df_pendentes['Empresa'] + " (" + df_pendentes['Status'] + ")"
+                grupo_sel = st.selectbox("Escolha o Grupo para tratar:", opcoes)
                 
-                subtotal = qtd * preco
-                valor_total_proposta += subtotal
-                tabela_itens.append(f"{qtd}x {item} (R$ {subtotal:.2f})")
-            
-            st.markdown(f"### 💰 **Valor Total da Proposta: R$ {valor_total_proposta:,.2f}**")
-            
-            if st.button("🚀 Gerar Link Inteligente e Salvar Proposta", type="primary"):
-                if not nome_empresa or not email_empresa:
-                    st.warning("Preencha o Nome e o E-mail do cliente.")
-                else:
-                    id_prop = "PROP-" + datetime.now().strftime("%H%M%S")
-                    resumo_str = " | ".join(tabela_itens)
+                id_sel = grupo_sel.split(" - ")[0]
+                linha_atual = df_pendentes[df_pendentes['ID'] == id_sel].iloc[0]
+                
+                st.markdown("---")
+                st.subheader(f"📋 Informações da Solicitação: {linha_atual['Empresa']}")
+                c_info1, c_info2 = st.columns(2)
+                with c_info1:
+                    st.markdown(f"**Contato:** {linha_atual['Contato']}")
+                    st.markdown(f"**E-mail:** {linha_atual['E-mail']}")
+                    st.markdown(f"**Telefone:** {linha_atual['Telefone']}")
+                with c_info2:
+                    st.markdown(f"**Data de Envio:** {linha_atual['Data Envio']}")
+                    st.markdown(f"**Período:** {linha_atual['Check-in']} até {linha_atual['Check-out']}")
+                
+                mapa_json = linha_atual.get('Mapa de Quartos', '')
+                if mapa_json:
+                    try:
+                        mapa_lista = json.loads(mapa_json)
+                        df_mapa = pd.DataFrame(mapa_lista)
+                        st.markdown("**📅 Distribuição Diária de Quartos solicitada pelo Hotel:**")
+                        st.dataframe(df_mapa, hide_index=True, use_container_width=True)
+                    except:
+                        pass
+                st.markdown("---")
+
+                rn_s = int(linha_atual['Total RN Single'] or 0)
+                rn_d = int(linha_atual['Total RN Duplo'] or 0)
+                rn_t = int(linha_atual['Total RN Triplo'] or 0)
+                
+                with st.form("form_tratativa_completa"):
+                    st.subheader("1. Definição de Tarifas de Hospedagem (NET)")
+                    col1, col2, col3 = st.columns(3)
+                    with col1: t_single = st.number_input("Tarifa Single (R$)", value=float(linha_atual.get('Tarifa Single', 0) or 0))
+                    with col2: t_duplo = st.number_input("Tarifa Duplo (R$)", value=float(linha_atual.get('Tarifa Duplo', 0) or 0))
+                    with col3: t_triplo = st.number_input("Tarifa Triplo (R$)", value=float(linha_atual.get('Tarifa Triplo', 0) or 0))
                     
-                    # Salva na aba Propostas da planilha unificada Base_Grupos_App
-                    aba_propostas.append_row([
-                        id_prop, nome_empresa, email_empresa, resumo_str, 
-                        valor_total_proposta, "Pendente", "", datetime.now().strftime("%d/%m/%Y"), ""
-                    ])
+                    st.markdown("---")
+                    st.subheader("2. Seleção de Produtos Extras & Serviços (Opcional)")
                     
-                    # Gera o link rastreável com a nova URL configurada
-                    link_rastreavel = f"{URL_WEB_APP}?id={id_prop}&nome={nome_empresa.replace(' ', '%20')}"
+                    # Lista exata dos produtos da imagem oficial
+                    produtos_disponiveis = [
+                        "Hospedagem Single (Diária) Apartamento DBD",
+                        "Hospedagem Duplo (Diária) Apartamento DBD",
+                        "Hospedagem Single (Diária) Apartamento DBC",
+                        "Hospedagem Duplo (Diária) Apartamento DBC",
+                        "Hospedagem Triplo (Diária) Apartamento DBC",
+                        "Hospedagem Single (Diária) Apartamento TWC",
+                        "Hospedagem Duplo (Diária) Apartamento TWC",
+                        "Hospedagem Single (Diária) Apartamento ROH",
+                        "Hospedagem Duplo (Diária) Apartamento ROH",
+                        "Hospedagem Single (Diária) Apartamento S2D",
+                        "Hospedagem Duplo (Diária) Apartamento S2D",
+                        "Hospedagem Triplo (Diária) Apartamento S2D",
+                        "Café da manhã",
+                        "Almoço Buffet",
+                        "Jantar Buffet",
+                        "Almoço Três tempos",
+                        "Jantar Três tempos",
+                        "Abertura de Porta",
+                        "Late Check-out",
+                        "Guarda Volumes"
+                    ]
                     
-                    st.success("🎉 Proposta gerada com sucesso e salva na planilha!")
-                    st.markdown("Envie o link abaixo para o cliente:")
-                    st.code(link_rastreavel)
+                    extras_selecionados = st.multiselect("Selecione itens adicionais para esta proposta:", produtos_disponiveis)
+                    
+                    extras_dados = []
+                    if extras_selecionados:
+                        st.markdown("*(Defina a quantidade e valor unitário para os extras)*")
+                        for ext in extras_selecionados:
+                            ec1, ec2, ec3 = st.columns([3, 1, 1])
+                            with ec1: st.write(f"**{ext}**")
+                            with ec2: q_ext = st.number_input(f"Qtd ({ext})", min_value=1, value=1, key=f"q_{ext}")
+                            with ec3: v_ext = st.number_input(f"Valor Unit. R$ ({ext})", min_value=0.0, value=50.0, step=5.0, key=f"v_{ext}")
+                            extras_dados.append({"Item": ext, "Qtd": q_ext, "Valor": v_ext, "Subtotal": q_ext * v_ext})
+
+                    st.markdown("---")
+                    st.subheader("3. Ação Comercial e Status")
+                    novo_status = st.radio("Mudar status para:", ["Cotação enviada", "Confirmado", "Recusado"], horizontal=True)
+                    
+                    c_data, c_motivo = st.columns(2)
+                    with c_data: novo_deadline = st.date_input("Deadline (Se cotação)", value=date.today())
+                    with c_motivo: motivo = st.selectbox("Motivo (Se recusado)", ["", "Preço", "Estrutura", "Não informado", "Sem disponibilidade"])
+                    
+                    btn_salvar = st.form_submit_button("💾 Salvar Tratativa e Gerar Link da Proposta", type="primary")
+                    
+                    if btn_salvar:
+                        if novo_status == "Recusado" and motivo == "":
+                            st.error("⚠️ Escolha um motivo de recusa.")
+                        else:
+                            # Cálculo da receita de hospedagem padrão
+                            receita_hospedagem = (rn_s * t_single) + (rn_d * t_duplo) + (rn_t * t_triplo)
+                            
+                            # Soma os extras se houver
+                            receita_extras = sum([item["Subtotal"] for item in extras_dados])
+                            receita_total = receita_hospedagem + receita_extras
+                            
+                            linha_planilha = df[df['ID'] == id_sel].index[0] + 2
+                            
+                            # Atualiza na aba Dados
+                            aba_dados.update_cell(linha_planilha, 12, t_single)
+                            aba_dados.update_cell(linha_planilha, 13, t_duplo)
+                            aba_dados.update_cell(linha_planilha, 14, t_triplo)
+                            aba_dados.update_cell(linha_planilha, 15, receita_total)
+                            aba_dados.update_cell(linha_planilha, 16, novo_status)
+                            
+                            if novo_status == "Cotação enviada":
+                                aba_dados.update_cell(linha_planilha, 17, novo_deadline.strftime("%d/%m/%Y"))
+                                aba_dados.update_cell(linha_planilha, 18, "")
+                            elif novo_status == "Recusado":
+                                aba_dados.update_cell(linha_planilha, 17, "") 
+                                aba_dados.update_cell(linha_planilha, 18, motivo)
+                            elif novo_status == "Confirmado":
+                                aba_dados.update_cell(linha_planilha, 17, "") 
+                                aba_dados.update_cell(linha_planilha, 18, "") 
+                            
+                            # Monta o resumo dos produtos para a Proposta
+                            resumo_partes = []
+                            if rn_s > 0: resumo_partes.append(f"{rn_s}x Hospedagem Single (R$ {t_single:.2f})")
+                            if rn_d > 0: resumo_partes.append(f"{rn_d}x Hospedagem Duplo (R$ {t_duplo:.2f})")
+                            if rn_t > 0: resumo_partes.append(f"{rn_t}x Hospedagem Triplo (R$ {t_triplo:.2f})")
+                            for ex in extras_dados:
+                                resumo_partes.append(f"{ex['Qtd']}x {ex['Item']} (R$ {ex['Subtotal']:.2f})")
+                            
+                            resumo_str = " | ".join(resumo_partes)
+                            id_prop = f"PROP-{id_sel}"
+                            
+                            # Salva na aba Propostas
+                            aba_propostas.append_row([
+                                id_prop, linha_atual['Empresa'], linha_atual['E-mail'], resumo_str, 
+                                receita_total, novo_status, "", datetime.now().strftime("%d/%m/%Y"), ""
+                            ])
+                            
+                            st.success(f"✅ Tratativa salva! Receita Total: R$ {receita_total:,.2f}")
+                            
+                            # Gera o link inteligente rastreável
+                            link_rastreavel = f"{URL_WEB_APP}?id={id_prop}&nome={linha_atual['Empresa'].replace(' ', '%20')}"
+                            st.markdown("### 🔗 Link Inteligente da Proposta Gerado:")
+                            st.code(link_rastreavel)
+                            st.cache_resource.clear()
 
 # ------------------------------------------------
-# 5. Follow-up
+# 4. Follow-up
 # ------------------------------------------------
 elif menu == "👀 Follow-up":
     st.header("👀 Acompanhamento da Operação")
@@ -588,7 +567,7 @@ elif menu == "👀 Follow-up":
                 st.info("Nenhum grupo confirmado ainda.")
 
 # ------------------------------------------------
-# 6. Gerenciar Usuários (Apenas Gerencial)
+# 5. Gerenciar Usuários (Apenas Gerencial)
 # ------------------------------------------------
 elif menu == "⚙️ Gerenciar Usuários" and perfil == "Gerencial":
     st.header("⚙️ Painel de Controle de Usuários")
