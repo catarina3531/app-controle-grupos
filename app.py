@@ -122,6 +122,10 @@ if "logado" not in st.session_state:
     st.session_state["tel_user"] = ""
     st.session_state["mudar_senha"] = False
 
+# Controle de Versão para Limpeza de Formulários
+if "form_version" not in st.session_state:
+    st.session_state["form_version"] = 0
+
 if not st.session_state["logado"]:
     st.title("🔐 Acesso ao Sistema de Grupos")
     lista_usuarios_validos = df_usuarios['usuario'].dropna().tolist()
@@ -204,31 +208,30 @@ if menu == "📊 Dashboard":
         col3.metric("Confirmados", len(df_dash[df_dash['Status'].str.contains("confirmado", case=False, na=False)]))
         col4.metric("Recusados", len(df_dash[df_dash['Status'].str.contains("recusado", case=False, na=False)]))
 
-# 2. Nova Solicitação (Com Limpeza Completa de Estado)
+# 2. Nova Solicitação
 elif menu == "🛎️ Nova Solicitação":
     st.header("🛎️ Enviar Grupo para Vendas")
     
     if st.button("🧹 Limpar / Novo Formulário"):
-        for key in list(st.session_state.keys()):
-            if key not in ["logado", "usuario", "perfil", "cargo", "email_user", "tel_user", "mudar_senha"]:
-                del st.session_state[key]
+        st.session_state["form_version"] += 1
         st.rerun()
 
-    empresa = st.text_input("Empresa / Agência", key="input_empresa")
+    v = st.session_state["form_version"]
+    empresa = st.text_input("Empresa / Agência", key=f"input_empresa_{v}")
     col1, col2, col3 = st.columns(3)
-    with col1: contato = st.text_input("Contato", key="input_contato")
-    with col2: email = st.text_input("E-mail", key="input_email")
-    with col3: telefone = st.text_input("Telefone", key="input_telefone")
+    with col1: contato = st.text_input("Contato", key=f"input_contato_{v}")
+    with col2: email = st.text_input("E-mail", key=f"input_email_{v}")
+    with col3: telefone = st.text_input("Telefone", key=f"input_telefone_{v}")
         
     col_in, col_out = st.columns(2)
-    with col_in: checkin = st.date_input("Primeiro Check-in", value=date.today(), key="input_checkin")
-    with col_out: checkout = st.date_input("Último Check-out", value=date.today() + timedelta(days=1), key="input_checkout")
+    with col_in: checkin = st.date_input("Primeiro Check-in", value=date.today(), key=f"input_checkin_{v}")
+    with col_out: checkout = st.date_input("Último Check-out", value=date.today() + timedelta(days=1), key=f"input_checkout_{v}")
     
     dias = (checkout - checkin).days
     if dias > 0:
         datas_lista = [checkin + timedelta(days=i) for i in range(dias)]
         df_grid = pd.DataFrame({"Data": [d.strftime("%d/%m/%Y") for d in datas_lista], "Single": [0]*dias, "Duplo": [0]*dias, "Triplo": [0]*dias})
-        df_editado = st.data_editor(df_grid, hide_index=True, use_container_width=True, key="grid_quartos")
+        df_editado = st.data_editor(df_grid, hide_index=True, use_container_width=True, key=f"grid_quartos_{v}")
         
         if st.button("🚀 Enviar Solicitação para Vendas", type="primary"):
             if empresa == "":
@@ -245,6 +248,8 @@ elif menu == "🛎️ Nova Solicitação":
                 st.success("✅ Grupo registrado com sucesso!")
                 st.cache_resource.clear()
                 st.cache_data.clear()
+                st.session_state["form_version"] += 1
+                st.rerun()
 
 # 3. Gestão de Vendas & Proposta
 elif menu == "💼 Gestão de Vendas & Propostas":
@@ -262,13 +267,12 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                 st.success("Nenhum grupo pendente no momento!")
             else:
                 if st.button("🧹 Limpar / Novo Formulário"):
-                    for key in list(st.session_state.keys()):
-                        if key not in ["logado", "usuario", "perfil", "cargo", "email_user", "tel_user", "mudar_senha"]:
-                            del st.session_state[key]
+                    st.session_state["form_version"] += 1
                     st.rerun()
 
+                v = st.session_state["form_version"]
                 opcoes = df_pendentes['ID'].astype(str) + " - " + df_pendentes['Empresa'] + " (" + df_pendentes['Status'] + ")"
-                grupo_sel = st.selectbox("Escolha o Grupo para tratar:", opcoes, key="sel_grupo_tratar")
+                grupo_sel = st.selectbox("Escolha o Grupo para tratar:", opcoes, key=f"sel_grupo_tratar_{v}")
                 id_sel = grupo_sel.split(" - ")[0]
                 linha_atual = df_pendentes[df_pendentes['ID'] == id_sel].iloc[0]
                 
@@ -282,17 +286,17 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                 
                 with c1:
                     if rn_s > 0:
-                        t_single = st.number_input("Tarifa Single (R$)", value=float(linha_atual.get('Tarifa Single', 0) or 0), key="val_t_single")
+                        t_single = st.number_input("Tarifa Single (R$)", value=float(linha_atual.get('Tarifa Single', 0) or 0), key=f"val_t_single_{v}")
                     else:
                         st.info("Single: Não solicitado")
                 with c2:
                     if rn_d > 0:
-                        t_duplo = st.number_input("Tarifa Duplo (R$)", value=float(linha_atual.get('Tarifa Duplo', 0) or 0), key="val_t_duplo")
+                        t_duplo = st.number_input("Tarifa Duplo (R$)", value=float(linha_atual.get('Tarifa Duplo', 0) or 0), key=f"val_t_duplo_{v}")
                     else:
                         st.info("Duplo: Não solicitado")
                 with c3:
                     if rn_t > 0:
-                        t_triplo = st.number_input("Tarifa Triplo (R$)", value=float(linha_atual.get('Tarifa Triplo', 0) or 0), key="val_t_triplo")
+                        t_triplo = st.number_input("Tarifa Triplo (R$)", value=float(linha_atual.get('Tarifa Triplo', 0) or 0), key=f"val_t_triplo_{v}")
                     else:
                         st.info("Triplo: Não solicitado")
                 
@@ -316,11 +320,11 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         "S2D/Superior – 01 cama de casal e 01 cama de solteiro (01 a 03 pessoas - Triplo)"
                     ])
                 
-                tipologias_selecionadas = st.multiselect("Tipologias de Apartamentos Disponíveis:", tipologias_disponiveis, key="sel_tipologias")
+                tipologias_selecionadas = st.multiselect("Tipologias de Apartamentos Disponíveis:", tipologias_disponiveis, key=f"sel_tipologias_{v}")
 
                 st.subheader("3. Produtos Extras & Serviços")
                 extras_opcoes = ["Almoço Buffet", "Jantar Buffet", "Almoço Três tempos", "Jantar Três tempos", "Abertura de Porta", "Late Check-out", "Guarda Volumes"]
-                extras_selecionados = st.multiselect("Selecione adicionais:", extras_opcoes, key="sel_extras")
+                extras_selecionados = st.multiselect("Selecione adicionais:", extras_opcoes, key=f"sel_extras_{v}")
                 
                 extras_dados = []
                 extras_incompletos = False
@@ -330,8 +334,8 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     for ext in extras_selecionados:
                         ec1, ec2, ec3 = st.columns([3, 1, 1])
                         with ec1: st.write(f"**{ext}**")
-                        with ec2: q_ext = st.number_input(f"Qtd ({ext})", min_value=0, value=0, key=f"q_{ext}")
-                        with ec3: v_ext = st.number_input(f"Valor Unit. R$ ({ext})", min_value=0.0, value=0.0, step=5.0, key=f"v_{ext}")
+                        with ec2: q_ext = st.number_input(f"Qtd ({ext})", min_value=0, value=0, key=f"q_{ext}_{v}")
+                        with ec3: v_ext = st.number_input(f"Valor Unit. R$ ({ext})", min_value=0.0, value=0.0, step=5.0, key=f"v_{ext}_{v}")
                         
                         if q_ext <= 0 or v_ext <= 0.0:
                             extras_incompletos = True
@@ -339,11 +343,11 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         extras_dados.append({"Item": ext, "Qtd": q_ext, "Valor": v_ext, "Subtotal": q_ext * v_ext})
 
                 st.subheader("4. Descrição Livre / Cardápio / Observações")
-                descricao_livre = st.text_area("Insira aqui detalhes do cardápio ou observações específicas que aparecerão na proposta:", placeholder="Ex: Almoço executivo composto por entrada, prato principal e sobremesa...", key="txt_desc_livre")
+                descricao_livre = st.text_area("Insira aqui detalhes do cardápio ou observações específicas que aparecerão na proposta:", placeholder="Ex: Almoço executivo composto por entrada, prato principal e sobremesa...", key=f"txt_desc_livre_{v}")
 
                 st.subheader("5. Status Comercial")
-                novo_status = st.radio("Status:", ["Cotação enviada", "Confirmado", "Recusado"], horizontal=True, key="radio_status_comercial")
-                novo_deadline = st.date_input("Deadline", value=date.today(), key="input_deadline_comercial")
+                novo_status = st.radio("Status:", ["Cotação enviada", "Confirmado", "Recusado"], horizontal=True, key=f"radio_status_comercial_{v}")
+                novo_deadline = st.date_input("Deadline", value=date.today(), key=f"input_deadline_comercial_{v}")
                 
                 if st.button("💾 Salvar e Gerar Link da Proposta", type="primary"):
                     if extras_incompletos:
@@ -418,6 +422,8 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         st.code(link_rastreavel)
                         st.cache_resource.clear()
                         st.cache_data.clear()
+                        st.session_state["form_version"] += 1
+                        st.rerun()
 
 # 4. Acompanhamento de Propostas
 elif menu == "📑 Acompanhamento de Propostas":
