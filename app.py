@@ -49,6 +49,10 @@ def conectar_planilhas():
         aba_propostas = planilha.add_worksheet(title="Propostas", rows=100, cols=14)
         aba_propostas.append_row(['ID_Proposta', 'Cliente', 'Email', 'Produtos_Contratados', 'Valor_Total', 'Status', 'Observacoes', 'Data_Criacao', 'Ultimo_Acesso', 'Nome_Usuario', 'Cargo_Usuario', 'Email_Usuario', 'Tel_Usuario', 'Link_Proposta'])
 
+    # Garante que a aba Propostas tenha pelo menos 14 colunas para evitar erros de limite
+    if aba_propostas.col_count < 14:
+        aba_propostas.resize(cols=14)
+
     return aba_dados, aba_usuarios, aba_propostas
 
 try:
@@ -207,7 +211,7 @@ if menu == "📊 Dashboard":
         col3.metric("Confirmados", len(df_dash[df_dash['Status'].str.contains("confirmado", case=False, na=False)]))
         col4.metric("Recusados", len(df_dash[df_dash['Status'].str.contains("recusado", case=False, na=False)]))
 
-# 2. Nova Solicitação (Validação de Mínimo 10 Apartamentos)
+# 2. Nova Solicitação
 elif menu == "🛎️ Nova Solicitação":
     st.header("🛎️ Enviar Grupo para Vendas")
     
@@ -396,10 +400,10 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         data_hj = datetime.now().strftime("%d/%m/%Y")
                         link_rastreavel = f"{URL_WEB_APP}?id={id_prop}&nome={linha_atual['Empresa'].replace(' ', '%20')}"
                         
-                        u_logado = st.session_state.get("usuario", "Equipe")
-                        u_cargo = st.session_state.get("cargo", "Gerente Geral")
-                        u_email = st.session_state.get("email_user", "catarina.costa@accor.com")
-                        u_tel = st.session_state.get("tel_user", "(11) 5085-5699")
+                        u_logado = str(st.session_state.get("usuario", "Equipe"))
+                        u_cargo = str(st.session_state.get("cargo", "Gerente Geral"))
+                        u_email = str(st.session_state.get("email_user", "catarina.costa@accor.com"))
+                        u_tel = str(st.session_state.get("tel_user", "(11) 5085-5699"))
 
                         valor_total_formatado = f"{receita_total * 1.05:,.2f}"
 
@@ -408,18 +412,18 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         for idx_p, p_row in enumerate(propostas_atuais[1:], start=2):
                             if p_row[0] == id_prop:
                                 aba_propostas.update(f'A{idx_p}:N{idx_p}', [[
-                                    id_prop, linha_atual['Empresa'], linha_atual['E-mail'], tabela_html, 
-                                    valor_total_formatado, novo_status, "", data_hj, "",
-                                    u_logado, u_cargo, u_email, u_tel, link_rastreavel
+                                    str(id_prop), str(linha_atual['Empresa']), str(linha_atual['E-mail']), str(tabela_html), 
+                                    str(valor_total_formatado), str(novo_status), "", str(data_hj), "",
+                                    str(u_logado), str(u_cargo), str(u_email), str(u_tel), str(link_rastreavel)
                                 ]])
                                 achou = True
                                 break
                         
                         if not achou:
                             aba_propostas.append_row([
-                                id_prop, linha_atual['Empresa'], linha_atual['E-mail'], tabela_html, 
-                                valor_total_formatado, novo_status, "", data_hj, "",
-                                u_logado, u_cargo, u_email, u_tel, link_rastreavel
+                                str(id_prop), str(linha_atual['Empresa']), str(linha_atual['E-mail']), str(tabela_html), 
+                                str(valor_total_formatado), str(novo_status), "", str(data_hj), "",
+                                str(u_logado), str(u_cargo), str(u_email), str(u_tel), str(link_rastreavel)
                             ])
                         
                         st.success(f"✅ Proposta gerada/atualizada com sucesso! Status: {novo_status}")
