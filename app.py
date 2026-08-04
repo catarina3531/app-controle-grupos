@@ -15,7 +15,29 @@ st.markdown("""
         50% { opacity: 0.3; }
         100% { opacity: 1; }
     }
-    .alerta-piscando {
+    .alerta-laranja {
+        animation: piscar 1.2s infinite;
+        padding: 12px;
+        border-radius: 8px;
+        background-color: #ffe0b2;
+        color: #e65100;
+        font-weight: bold;
+        text-align: center;
+        margin-bottom: 10px;
+        border: 1px solid #ffb74d;
+    }
+    .alerta-amarelo {
+        animation: piscar 1.2s infinite;
+        padding: 12px;
+        border-radius: 8px;
+        background-color: #fff9c4;
+        color: #f57f17;
+        font-weight: bold;
+        text-align: center;
+        margin-bottom: 10px;
+        border: 1px solid #ffee58;
+    }
+    .alerta-vermelho {
         animation: piscar 1.2s infinite;
         padding: 12px;
         border-radius: 8px;
@@ -247,11 +269,11 @@ menu = st.sidebar.radio("Navegação:", opcoes_menu)
 if menu == "📊 Dashboard & Analytics":
     st.header("📊 Dashboard Executivo & Performance por Usuário")
     
-    # --- BLOCO DE ALERTAS INTELIGENTES (PISCANTE) ---
+    # --- BLOCO DE ALERTAS INTELIGENTES (CORES ESPECÍFICAS & PISCANTE) ---
     if not df.empty:
         hoje = pd.to_datetime(date.today())
         
-        # 1. Alerta: Solicitações sem tratativa há mais de 2 dias úteis (status enviado para vendas)
+        # 1. Alerta: Solicitações sem tratativa há mais de 2 dias úteis (LARANJA)
         df_sem_trat = df[df['Status_Clean'].str.contains("enviado|solicitação", case=False, na=False)].copy()
         df_sem_trat['Data_Envio_Parsed'] = pd.to_datetime(df_sem_trat['Data Envio'], format='%d/%m/%Y', errors='coerce')
         
@@ -264,21 +286,21 @@ if menu == "📊 Dashboard & Analytics":
                     contador_sem_tratativa += 1
 
         if contador_sem_tratativa > 0:
-            st.markdown(f'<div class="alerta-piscando">⚠️ ATENÇÃO: Existem {contador_sem_tratativa} solicitação(ões) sem tratativa comercial há mais de 2 dias úteis!</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="alerta-laranja">⚠️ ATENÇÃO: Existem {contador_sem_tratativa} solicitação(ões) sem tratativa comercial há mais de 2 dias úteis!</div>', unsafe_allow_html=True)
 
-        # 2. Alerta: Deadlines vencendo hoje
+        # 2. Alerta: Deadlines vencendo hoje ( AMARELO )
         df_deadlines = df[~df['Status_Clean'].isin(['confirmado', 'recusado', 'enviado para time de vendas'])].copy()
         df_deadlines['Deadline_Parsed'] = pd.to_datetime(df_deadlines['Deadline'], format='%d/%m/%Y', errors='coerce')
         
         vencendo_hoje = len(df_deadlines[df_deadlines['Deadline_Parsed'].dt.date == hoje.date()])
         if vencendo_hoje > 0:
-            st.markdown(f'<div class="alerta-piscando">⏳ ALERTA DE PRAZO: Existem {vencendo_hoje} proposta(s) com DEADLINE VENCENDO HOJE!</div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="alerta-amarelo">⏳ ALERTA DE PRAZO: Existem {vencendo_hoje} proposta(s) com DEADLINE VENCENDO HOJE!</div>', unsafe_allow_html=True)
 
-        # 3. Alerta: Deadlines vencidos
+        # 3. Alerta: Deadlines vencidos ( VERMELHO )
         vencidos = len(df_deadlines[df_deadlines['Deadline_Parsed'].dt.date < hoje.date()])
         if vencidos > 0:
-            st.markdown(f'<div class="alerta-piscando">🚨 URGENTE: Existem {vencidos} proposta(s) com DEADLINE VENCIDO sem confirmação!</div>', unsafe_allow_html=True)
-    # -----------------------------------------------
+            st.markdown(f'<div class="alerta-vermelho">🚨 URGENTE: Existem {vencidos} proposta(s) com DEADLINE VENCIDO sem confirmação!</div>', unsafe_allow_html=True)
+    # ------------------------------------------------------------------
 
     if st.button("🖨️ Exportar / Imprimir Relatório (PDF)"):
         st.markdown("<script>window.print();</script>", unsafe_allow_html=True)
