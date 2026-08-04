@@ -184,23 +184,24 @@ def gerar_pdf_proposta_individual(row_prop):
     
     produtos_html = str(row_prop.get('Produtos_Contratados', ''))
     
-    # Processador robusto de tags HTML para o ReportLab
+    # Extração ultra-robusta baseada no HTML armazenado
     linhas_tabela = [["Descrição / Acomodação", "Qtd / RN", "Valor Unit.", "Subtotal"]]
     
-    # Limpa tags desnecessárias e quebra as linhas da tabela HTML salva
-    blocos_tr = produtos_html.split("<tr>")
-    for tr in blocos_tr:
-        if "<td>" in tr:
-            celulas = []
-            blocos_td = tr.split("<td>")
-            for td in blocos_td[1:]:
-                limpo = td.split("</td>")[0].replace("<h4>", "").replace("</h4>", "").strip()
-                if limpo:
-                    celulas.append(limpo)
-            if len(celulas) >= 4:
-                linhas_tabela.append([celulas[0] + (f"\n({celulas[1]})" if len(celulas) > 4 and "Conforme" not in celulas[1] else ""), celulas[-3], celulas[-2], celulas[-1]])
-            elif len(celulas) == 4:
-                linhas_tabela.append(celulas)
+    partes_tr = produtos_html.split("<tr>")[1:]
+    for tr in partes_tr:
+        tds = [p.split("</td>")[0].replace("<h4>", "").replace("</h4>", "").strip() for p in tr.split("<td>")[1:]]
+        if len(tds) >= 4:
+            desc = tds[0]
+            if len(tds) >= 5 and "Conforme" not in tds[1]:
+                desc += f"\n({tds[1]})"
+                qtd = tds[2]
+                v_unit = tds[3]
+                sub = tds[4]
+            else:
+                qtd = tds[1]
+                v_unit = tds[2]
+                sub = tds[3]
+            linhas_tabela.append([desc, str(qtd), str(v_unit), str(sub)])
 
     if len(linhas_tabela) > 1:
         t_prop = Table(linhas_tabela, colWidths=[230, 70, 100, 100])
@@ -218,7 +219,6 @@ def gerar_pdf_proposta_individual(row_prop):
         ]))
         elementos.append(t_prop)
     else:
-        # Fallback de segurança caso a string venha em formato diferente
         elementos.append(Paragraph("Acomodações e serviços contratados conforme negociação comercial.", corpo))
 
     elementos.append(Spacer(1, 15))
