@@ -5,10 +5,6 @@ import gspread
 from google.oauth2.service_account import Credentials
 import altair as alt
 import json
-from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib import colors
 import io
 import urllib.parse
 
@@ -85,148 +81,6 @@ def calcular_dias_uteis(data_inicio, data_fim):
         return 0
     dias = pd.bdate_range(start=data_inicio, end=data_fim)
     return len(dias) - 1 if len(dias) > 0 else 0
-
-def gerar_pdf_relatorio(df_dados, total_leads, prop_env, confirmados, recusados, win_rate, meta_rev, receita_conf):
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
-    elementos = []
-    
-    styles = getSampleStyleSheet()
-    titulo_estilo = ParagraphStyle('TituloRelatorio', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor('#00703c'), spaceAfter=15, alignment=1)
-    sub_estilo = ParagraphStyle('SubRelatorio', parent=styles['Heading2'], fontSize=12, textColor=colors.HexColor('#333333'), spaceAfter=10)
-    
-    elementos.append(Paragraph("Relatório Executivo de Performance - CRM Grupos", titulo_estilo))
-    elementos.append(Paragraph(f"Data de Emissão: {datetime.now().strftime('%d/%m/%Y %H:%M')}", sub_estilo))
-    elementos.append(Spacer(1, 10))
-    
-    dados_tabela = [
-        ["Métrica", "Valor / Quantidade"],
-        ["Total de Leads / Solicitações", str(total_leads)],
-        ["Propostas Enviadas", str(prop_env)],
-        ["Confirmados", str(confirmados)],
-        ["Recusados", str(recusados)],
-        ["Taxa de Conversão (Win Rate)", f"{win_rate:.1f}%"],
-        ["Receita Confirmada vs Meta", f"R$ {receita_conf:,.2f} / R$ {meta_rev:,.2f}"]
-    ]
-    
-    t = Table(dados_tabela, colWidths=[300, 150])
-    t.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (1, 0), colors.HexColor('#00703c')),
-        ('TEXTCOLOR', (0, 0), (1, 0), colors.whitesmoke),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
-        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f5f5f5')),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#dddddd')),
-        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 0), (-1, -1), 10),
-        ('TOPPADDING', (0, 1), (-1, -1), 6),
-        ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
-    ]))
-    
-    elementos.append(t)
-    elementos.append(Spacer(1, 20))
-    elementos.append(Paragraph("Detalhamento dos Registros Recentes", sub_estilo))
-    
-    if not df_dados.empty:
-        colunas_mostrar = ['ID', 'Empresa', 'Origem_Fluxo', 'Status', 'Receita Total']
-        cols_existentes = [c for c in colunas_mostrar if c in df_dados.columns]
-        
-        dados_detalhes = [cols_existentes]
-        for _, row in df_dados.head(15).iterrows():
-            linha_val = []
-            for c in cols_existentes:
-                val = str(row[c])
-                if c == 'Receita Total':
-                    val = f"R$ {float(val):,.2f}"
-                linha_val.append(val)
-            dados_detalhes.append(linha_val)
-            
-        t_detalhes = Table(dados_detalhes, colWidths=[70, 120, 100, 100, 80])
-        t_detalhes.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#333333')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 8),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cccccc')),
-            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 1), (-1, -1), 8),
-            ('TOPPADDING', (0, 1), (-1, -1), 4),
-            ('BOTTOMPADDING', (0, 1), (-1, -1), 4),
-        ]))
-        elementos.append(t_detalhes)
-        
-    doc.build(elementos)
-    buffer.seek(0)
-    return buffer.getvalue()
-
-def gerar_pdf_proposta_individual(row_prop):
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
-    elementos = []
-    
-    styles = getSampleStyleSheet()
-    titulo = ParagraphStyle('PropTitulo', parent=styles['Heading1'], fontSize=16, textColor=colors.HexColor('#00703c'), spaceAfter=10, alignment=1)
-    sub = ParagraphStyle('PropSub', parent=styles['Heading2'], fontSize=10, textColor=colors.HexColor('#333333'), spaceAfter=15)
-    corpo = ParagraphStyle('PropCorpo', parent=styles['Normal'], fontSize=9, textColor=colors.HexColor('#222222'), spaceAfter=6)
-    
-    cliente = row_prop.get('Cliente', 'Cliente')
-    id_p = row_prop.get('ID_Proposta', '')
-    data_c = row_prop.get('Data_Criacao', '')
-    val_tot = row_prop.get('Valor_Total', '0.00')
-    criado = row_prop.get('Nome_Usuario', '')
-    
-    elementos.append(Paragraph(f"PROPOSTA COMERCIAL - {cliente}", titulo))
-    elementos.append(Paragraph(f"<b>ID da Proposta:</b> {id_p} &nbsp;|&nbsp; <b>Data:</b> {data_c} &nbsp;|&nbsp; <b>Consultor(a):</b> {criado}", sub))
-    elementos.append(Spacer(1, 10))
-    elementos.append(Paragraph("<b>Detalhamento da Proposta e Serviços:</b>", corpo))
-    
-    produtos_html = str(row_prop.get('Produtos_Contratados', ''))
-    
-    # Extração ultra-robusta baseada no HTML armazenado
-    linhas_tabela = [["Descrição / Acomodação", "Qtd / RN", "Valor Unit.", "Subtotal"]]
-    
-    partes_tr = produtos_html.split("<tr>")[1:]
-    for tr in partes_tr:
-        tds = [p.split("</td>")[0].replace("<h4>", "").replace("</h4>", "").strip() for p in tr.split("<td>")[1:]]
-        if len(tds) >= 4:
-            desc = tds[0]
-            if len(tds) >= 5 and "Conforme" not in tds[1]:
-                desc += f"\n({tds[1]})"
-                qtd = tds[2]
-                v_unit = tds[3]
-                sub = tds[4]
-            else:
-                qtd = tds[1]
-                v_unit = tds[2]
-                sub = tds[3]
-            linhas_tabela.append([desc, str(qtd), str(v_unit), str(sub)])
-
-    if len(linhas_tabela) > 1:
-        t_prop = Table(linhas_tabela, colWidths=[230, 70, 100, 100])
-        t_prop.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#00703c')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('ALIGN', (0, 1), (0, -1), 'LEFT'),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 8),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#dddddd')),
-            ('TOPPADDING', (0, 0), (-1, -1), 5),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
-            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#fafafa')),
-        ]))
-        elementos.append(t_prop)
-    else:
-        elementos.append(Paragraph("Acomodações e serviços contratados conforme negociação comercial.", corpo))
-
-    elementos.append(Spacer(1, 15))
-    elementos.append(Paragraph(f"<b>Valor Total da Proposta: R$ {val_tot}</b>", ParagraphStyle('TotalSt', parent=corpo, fontSize=12, textColor=colors.HexColor('#00703c'))))
-    
-    doc.build(elementos)
-    buffer.seek(0)
-    return buffer.getvalue()
 
 @st.cache_resource(ttl=300) 
 def conectar_planilhas():
@@ -540,16 +394,6 @@ if menu == "📊 Dashboard & Analytics":
         progresso_meta = (receita_confirmada_total / meta_mensal * 100) if meta_mensal > 0 else 0
         st.progress(min(progresso_meta / 100.0, 1.0))
         st.write(f"**Realizado Confirmado:** R$ {receita_confirmada_total:,.2f} / **Meta:** R$ {meta_mensal:,.2f} ({progresso_meta:.1f}% atingido)")
-
-        st.markdown("<br>", unsafe_allow_html=True)
-        pdf_bytes = gerar_pdf_relatorio(df_dash, total_l, prop_e, conf_e, rec_e, win_rate, meta_mensal, receita_confirmada_total)
-        st.download_button(
-            label="📄 Baixar Relatório Executivo em PDF",
-            data=pdf_bytes,
-            file_name=f"Relatorio_CRM_Grupos_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-            mime="application/pdf",
-            type="primary"
-        )
 
         st.markdown("---")
         st.subheader("📈 Análise de Tendências e Performance")
@@ -1171,15 +1015,6 @@ elif menu == "📑 Acompanhamento de Propostas":
                     msg_encoded = urllib.parse.quote(msg_whatsapp)
                     url_whats = f"https://wa.me/?text={msg_encoded}"
                     st.markdown(f'<a href="{url_whats}" target="_blank"><button style="background-color:#25D366; color:white; padding:8px 16px; border:none; border-radius:5px; font-weight:bold; cursor:pointer;">📲 Enviar por WhatsApp</button></a>', unsafe_allow_html=True)
-                    
-                    pdf_prop_bytes = gerar_pdf_proposta_individual(row)
-                    st.download_button(
-                        label="📄 Baixar Proposta em PDF (Anexo)",
-                        data=pdf_prop_bytes,
-                        file_name=f"Proposta_{cliente_p.replace(' ', '_')}_{id_p}.pdf",
-                        mime="application/pdf",
-                        key=f"dl_pdf_{id_p}"
-                    )
                 else:
                     st.info("Link ainda não gerado para esta proposta.")
 
