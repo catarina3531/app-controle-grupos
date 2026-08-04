@@ -658,52 +658,81 @@ elif menu == "📑 Acompanhamento de Propostas":
     if df_propostas.empty:
         st.info("Nenhuma proposta registrada.")
     else:
-        # Pega as colunas exatas de como estão lá na planilha do Google (com ou sem underline)
+        # Pega as colunas exatas de como estão lá na planilha do Google
         colunas_reais = df_propostas.columns.tolist()
         
         for idx, row in df_propostas.iterrows():
-            # Tenta pegar pelo nome, ou cai no índice numérico se o nome foi alterado na planilha
+            # Extração dos dados básicos (ID, Cliente, Status, Valor, Criador, Link)
             id_p = row['ID_Proposta'] if 'ID_Proposta' in colunas_reais else row.iloc[0] if len(row) > 0 else ''
             cliente_p = row['Cliente'] if 'Cliente' in colunas_reais else row.iloc[1] if len(row) > 1 else 'Cliente'
             status_p = row['Status'] if 'Status' in colunas_reais else row.iloc[5] if len(row) > 5 else ''
             
-            # Valor Total inteligente
             val_tot = '0.00'
             if 'Valor_Total' in colunas_reais: val_tot = row['Valor_Total']
             elif 'Valor Total' in colunas_reais: val_tot = row['Valor Total']
             elif len(row) > 4: val_tot = row.iloc[4]
                 
-            # Usuário inteligente
             criado_por = 'Usuário não identificado'
             if 'Nome_Usuario' in colunas_reais: criado_por = row['Nome_Usuario']
             elif 'Nome Usuario' in colunas_reais: criado_por = row['Nome Usuario']
             elif len(row) > 9: criado_por = row.iloc[9]
             
-            # Link da proposta inteligente
             link_proposta = ''
             if 'Link_Proposta' in colunas_reais: link_proposta = row['Link_Proposta']
             elif 'Link Proposta' in colunas_reais: link_proposta = row['Link Proposta']
             elif len(row) > 13: link_proposta = row.iloc[13]
 
+            # -------------------------------------------------------------
+            # Extração de Novos Dados (E-mail, Data, Observação e Produtos)
+            # -------------------------------------------------------------
+            email_cliente = row['Email'] if 'Email' in colunas_reais else row.iloc[2] if len(row) > 2 else ''
+            
+            data_criacao = ''
+            if 'Data_Criacao' in colunas_reais: data_criacao = row['Data_Criacao']
+            elif 'Data Criacao' in colunas_reais: data_criacao = row['Data Criacao']
+            elif len(row) > 7: data_criacao = row.iloc[7]
+
+            obs = row['Observacoes'] if 'Observacoes' in colunas_reais else row.iloc[6] if len(row) > 6 else ''
+            
+            produtos_contratados = ''
+            if 'Produtos_Contratados' in colunas_reais: produtos_contratados = row['Produtos_Contratados']
+            elif 'Produtos Contratados' in colunas_reais: produtos_contratados = row['Produtos Contratados']
+            elif len(row) > 3: produtos_contratados = row.iloc[3]
+            # -------------------------------------------------------------
+
             if pd.isna(val_tot) or str(val_tot).strip() == '': val_tot = '0.00'
             if pd.isna(criado_por) or str(criado_por).strip() == '': criado_por = 'Usuário não identificado'
             if pd.isna(link_proposta): link_proposta = ''
 
-            # Correção de segurança: Caso as colunas no Google Sheets tenham sido embaralhadas 
-            # e o link tenha caído na coluna do usuário.
+            # Correção de segurança para não misturar link e usuário
             if str(criado_por).startswith("http"):
                 link_temp = criado_por
                 criado_por = link_proposta
                 link_proposta = link_temp
 
+            # Construção da visualização (Expander)
             with st.expander(f"📌 {cliente_p} (ID: {id_p}) - Status: **{status_p}**"):
+                st.write(f"**Empresa/Cliente:** {cliente_p} | **E-mail:** {email_cliente}")
+                st.write(f"**Data de Criação:** {data_criacao}")
                 st.write(f"**Valor Total:** R$ {val_tot} | **Criado por:** {criado_por}")
                 
-                # Mostra o link se encontrou de primeira
+                if obs and str(obs).strip():
+                    st.write(f"**Observações internas:** {obs}")
+
+                st.markdown("---")
+                st.markdown("##### 📄 Resumo da Proposta")
+                if produtos_contratados and str(produtos_contratados).strip():
+                    # Renderiza o HTML das tabelas geradas no passo anterior
+                    st.markdown(produtos_contratados, unsafe_allow_html=True)
+                else:
+                    st.info("Nenhum detalhe de produto registrado.")
+
+                st.markdown("---")
+                st.markdown("##### 🔗 Link da Proposta")
+                # Mostra o link
                 if str(link_proposta).startswith("http"):
                     st.code(link_proposta)
                 else:
-                    # Se ainda assim não achou o link, ele varre toda a linha do banco de dados pra achar a URL
                     possiveis_links = [str(x) for x in row.values if str(x).startswith("http")]
                     if possiveis_links:
                         st.code(possiveis_links[0])
