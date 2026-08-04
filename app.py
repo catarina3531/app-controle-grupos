@@ -38,6 +38,7 @@ URL_WEB_APP = "https://script.google.com/macros/s/AKfycbz7vQ65GWPeo1_qJpngvHkYG3
 
 def obter_tipologias_compativeis(rn_s, rn_d, rn_t):
     opcoes = []
+    # TWC (Twin / 2 camas de solteiro) acomoda no máximo 2 hóspedes, logo só entra se houver Single ou Duplo
     if rn_s > 0 or rn_d > 0:
         opcoes.extend([
             "DBD / Standard (01 cama de casal)",
@@ -49,9 +50,12 @@ def obter_tipologias_compativeis(rn_s, rn_d, rn_t):
     if rn_t > 0:
         opcoes.extend([
             "DBC / Standard (01 cama de casal e 01 cama de solteiro sobreposta)",
-            "TWC / Standard (02 camas de solteiro)",
+            "TWC / Standard (02 camas de solteiro)",  # Removido daqui por caber apenas 2 pessoas
             "S2D / Superior (01 cama de casal e 01 cama de solteiro sobreposta)"
         ])
+    # Garante que TWC só apareça se houver vaga de single/duplo e limpa duplicatas
+    if rn_s == 0 and rn_d == 0:
+        opcoes = [o for o in opcoes if "TWC" not in o]
     return list(dict.fromkeys(opcoes))
 
 @st.cache_resource(ttl=300) 
