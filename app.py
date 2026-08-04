@@ -5,6 +5,11 @@ import gspread
 from google.oauth2.service_account import Credentials
 import altair as alt
 import json
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib import colors
+import io
 
 st.set_page_config(page_title="CRM Grupos & Propostas", page_icon="🏨", layout="wide")
 
@@ -81,6 +86,95 @@ def calcular_dias_uteis(data_inicio, data_fim):
         return 0
     dias = pd.bdate_range(start=data_inicio, end=data_fim)
     return len(dias) - 1 if len(dias) > 0 else 0
+
+def gerar_pdf_relatorio(df_dados, total_leads, prop_env, confirmados, recusados):
+    """Gera um PDF formatado com os dados do dashboard executivo"""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    elementos = []
+    
+    styles = getSampleStyleSheet()
+    titulo_estilo = ParagraphStyle(
+        'TituloRelatorio',
+        parent=styles['Heading1'],
+        fontSize=18,
+        textColor=colors.HexColor('#00703c'),
+        spaceAfter=15,
+        alignment=1
+    )
+    
+    sub_estilo = ParagraphStyle(
+        'SubRelatorio',
+        parent=styles['Heading2'],
+        fontSize=12,
+        textColor=colors.HexColor('#333333'),
+        spaceAfter=10
+    )
+    
+    elementos.append(Paragraph("Relatório Executivo de Performance - CRM Grupos", titulo_estilo))
+    elementos.append(Paragraph(f"Data de Emissão: {datetime.now().strftime('%d/%m/%Y %H:%M')}", sub_estilo))
+    elementos.append(Spacer(1, 10))
+    
+    # Tabela de Métricas Principais
+    dados_tabela = [
+        ["Métrica", "Quantidade"],
+        ["Total de Leads / Solicitações", str(total_leads)],
+        ["Propostas Enviadas", str(prop_env)],
+        ["Confirmados", str(confirmados)],
+        ["Recusados", str(recusados)]
+    ]
+    
+    t = Table(dados_tabela, colWidths=[300, 150])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (1, 0), colors.HexColor('#00703c')),
+        ('TEXTCOLOR', (0, 0), (1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f5f5f5')),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#dddddd')),
+        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('TOPPADDING', (0, 1), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+    ]))
+    
+    elementos.append(t)
+    elementos.append(Spacer(1, 20))
+    elementos.append(Paragraph("Detalhamento dos Registros Recentes", sub_estilo))
+    
+    if not df_dados.empty:
+        colunas_mostrar = ['ID', 'Empresa', 'Origem_Fluxo', 'Status', 'Receita Total']
+        cols_existentes = [c for c in colunas_mostrar if c in df_dados.columns]
+        
+        dados_detalhes = [cols_existentes]
+        for _, row in df_dados.head(15).iterrows():
+            linha_val = []
+            for c in cols_existentes:
+                val = str(row[c])
+                if c == 'Receita Total':
+                    val = f"R$ {float(val):,.2f}"
+                linha_val.append(val)
+            dados_detalhes.append(linha_val)
+            
+        t_detalhes = Table(dados_detalhes, colWidths=[70, 120, 100, 100, 80])
+        t_detalhes.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#333333')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#cccccc')),
+            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+            ('FONTSIZE', (0, 1), (-1, -1), 8),
+            ('TOPPADDING', (0, 1), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 1), (-1, -1), 4),
+        ]))
+        elementos.append(t_detalhes)
+        
+    doc.build(elementos)
+    buffer.seek(0)
+    return buffer.getvalue()
 
 @st.cache_resource(ttl=300) 
 def conectar_planilhas():
@@ -302,8 +396,6 @@ if menu == "📊 Dashboard & Analytics":
             st.markdown(f'<div class="alerta-vermelho">🚨 URGENTE: Existem {vencidos} proposta(s) com DEADLINE VENCIDO sem confirmação!</div>', unsafe_allow_html=True)
     # ------------------------------------------------------------------
 
-    if st.button("🖨️ Exportar / Imprimir Relatório (PDF)"):
-        st.markdown("<script>window.print();</script>", unsafe_allow_html=True)
     if df.empty:
         st.info("Nenhum dado cadastrado.")
     else:
@@ -325,11 +417,26 @@ if menu == "📊 Dashboard & Analytics":
             mes_sel = st.sidebar.selectbox("Selecione a Competência (Check-in):", ["Todos"] + meses_disp)
             df_dash = df[df['Mês/Ano Competência (Check-in)'].astype(str) == mes_sel] if mes_sel != "Todos" else df
 
+        total_l = len(df_dash)
+        prop_e = len(df_dash[df_dash['Status_Clean'].str.contains("cotação enviada", case=False, na=False)])
+        conf_e = len(df_dash[df_dash['Status_Clean'].str.contains("confirmado", case=False, na=False)])
+        rec_e = len(df_dash[df_dash['Status_Clean'].str.contains("recusado", case=False, na=False)])
+
         col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total Leads / Solicitações", len(df_dash))
-        col2.metric("Propostas Enviadas", len(df_dash[df_dash['Status_Clean'].str.contains("cotação enviada", case=False, na=False)]))
-        col3.metric("Confirmados", len(df_dash[df_dash['Status_Clean'].str.contains("confirmado", case=False, na=False)]))
-        col4.metric("Recusados", len(df_dash[df_dash['Status_Clean'].str.contains("recusado", case=False, na=False)]))
+        col1.metric("Total Leads / Solicitações", total_l)
+        col2.metric("Propostas Enviadas", prop_e)
+        col3.metric("Confirmados", conf_e)
+        col4.metric("Recusados", rec_e)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        pdf_bytes = gerar_pdf_relatorio(df_dash, total_l, prop_e, conf_e, rec_e)
+        st.download_button(
+            label="📄 Baixar Relatório Executivo em PDF",
+            data=pdf_bytes,
+            file_name=f"Relatorio_CRM_Grupos_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+            mime="application/pdf",
+            type="primary"
+        )
 
         st.markdown("---")
         c_g1, c_g2 = st.columns(2)
