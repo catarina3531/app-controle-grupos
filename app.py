@@ -26,6 +26,10 @@ st.markdown("""
         margin-bottom: 10px;
         border: 1px solid #ff9999;
     }
+    @media print {
+        .stSidebar { display: none; }
+        header { display: none; }
+    }
     </style>
 """, unsafe_allow_html=True)
 
@@ -59,12 +63,8 @@ try:
     
     @st.cache_data(ttl=60)
     def carregar_dados_cache():
-        return aba_dados.get_all_records(expected_headers=[
-            'ID', 'Data Envio', 'Empresa', 'Contato', 'E-mail', 'Telefone', 
-            'Check-in', 'Check-out', 'Total RN Single', 'Total RN Duplo', 'Total RN Triplo', 
-            'Tarifa Single', 'Tarifa Duplo', 'Tarifa Triplo', 'Receita Total', 
-            'Status', 'Deadline', 'Motivo Recusa', 'Mapa de Quartos'
-        ])
+        # Espera colunas: ID, Data Envio, Empresa, Contato, E-mail, Telefone, Check-in, Check-out, Single, Duplo, Triplo, T.Single, T.Duplo, T.Triplo, Receita, Status, Deadline, Motivo Recusa, Mapa, Origem_Solicitacao, Criado_Por
+        return aba_dados.get_all_records()
 
     @st.cache_data(ttl=60)
     def carregar_propostas_cache():
@@ -78,38 +78,38 @@ try:
     df = pd.DataFrame(dados_planilha)
     if not df.empty:
         df.columns = df.columns.str.strip()
-        # Garante a coluna Status_Clean globalmente para evitar Erros no Follow-up
         if 'Status' in df.columns:
             df['Status_Clean'] = df['Status'].astype(str).str.strip().str.lower()
         else:
             df['Status_Clean'] = ""
         
+        # Garante colunas de origem caso a planilha antiga não tenha
+        if 'Origem_Solicitacao' not in df.columns:
+            df['Origem_Solicitacao'] = 'Equipe de Reservas'
+        if 'Criado_Por' not in df.columns:
+            df['Criado_Por'] = 'Sistema'
+        if 'Motivo Recusa' not in df.columns:
+            df['Motivo Recusa'] = 'Não informado'
+            
     propostas_valores = carregar_propostas_cache()
     if len(propostas_valores) > 1:
         header_prop = [h.strip() for h in propostas_valores[0]]
         df_propostas = pd.DataFrame(propostas_valores[1:], columns=header_prop)
     else:
-        df_propostas = pd.DataFrame(columns=['ID_Proposta', 'Cliente', 'Email', 'Produtos_Contratados', 'Valor_Total', 'Status', 'Observacoes', 'Data_Criacao', 'Ultimo_Acesso', 'Link_Proposta'])
+        df_propostas = pd.DataFrame(columns=['ID_Proposta', 'Cliente', 'Email', 'Produtos_Contratados', 'Valor_Total', 'Status', 'Observacoes', 'Data_Criacao', 'Ultimo_Acesso', 'Link_Proposta', 'Nome_Usuario'])
 
     todos_valores_user = carregar_usuarios_cache()
     if len(todos_valores_user) <= 1:
-        if len(todos_valores_user) == 0:
-            aba_usuarios.append_row(['Usuario', 'Senha', 'Perfil', 'Primeiro Acesso', 'Cargo', 'Email', 'Telefone'])
-            
         usuarios_iniciais = [
             ["Amanda", "mudar@123", "Hotel", "Sim", "Analista de Distribuição e Reservas", "amanda@accor.com", "(11) 5085-5699"],
             ["Italo", "mudar@123", "Hotel", "Sim", "Analista de Distribuição e Reservas", "italo@accor.com", "(11) 5085-5699"],
             ["Amanda Ferrari", "mudar@123", "Vendas", "Sim", "Gerente de Vendas – Região Paulista & Jardins", "amanda.ferrari@accor.com", "(11) 99487-5023"],
             ["Elton", "mudar@123", "Vendas", "Sim", "Gerente de Contas / Account Manager", "elton.santos@accor.com", "(11) 94537-3303"],
             ["Catarina", "mudar@123", "Gerencial", "Não", "Gerente Geral", "catarina.costa@accor.com", "(11) 5085-5699"],
-            ["Kessia", "mudar@123", "Gerencial", "Sim", "Subgerente", "kessia.gomes@accor.com", "(11) 5085-5699"],
-            ["Cecilia", "mudar@123", "Gerencial", "Sim", "Coordenadora Operacional", "cecilia.maria@accor.com", "(11) 5085-5699"],
-            ["Amanda Rolim", "mudar@123", "Hotel", "Sim", "Revenue Manager", "amanda.rolim@accor.com", "(11) 5085-5699"],
-            ["Lucas Cardoso", "mudar@123", "Hotel", "Sim", "Supervisor de Guest Relation", "lucas.cardoso@accor.com", "(11) 5085-5699"]
+            ["Kessia", "mudar@123", "Gerencial", "Sim", "Subgerente", "kessia.gomes@accor.com", "(11) 5085-5699"]
         ]
         for u in usuarios_iniciais:
             aba_usuarios.append_row(u)
-        st.cache_data.clear()
         todos_valores_user = aba_usuarios.get_all_values()
 
     header = [str(h).strip().lower() for h in todos_valores_user[0]]
@@ -193,13 +193,17 @@ if perfil == "Gerencial":
 elif perfil == "Hotel":
     opcoes_menu = ["🛎️ Nova Solicitação", "👀 Follow-up"]
 elif perfil == "Vendas":
-    opcoes_menu = ["📊 Dashboard", "💼 Gestão de Vendas & Propostas", "📑 Acompanhamento de Propostas", "👀 Follow-up"]
+    opcoes_menu = ["📊 Dashboard", "🛎️ Nova Solicitação", "💼 Gestão de Vendas & Propostas", "📑 Acompanhamento de Propostas", "👀 Follow-up"]
 
 menu = st.sidebar.radio("Navegação:", opcoes_menu)
 
 # 1. Dashboard
 if menu == "📊 Dashboard":
-    st.header("📊 Visão Gerencial de Grupos")
+    st.header("📊 Visão Gerencial de Grupos & Relatórios")
+    
+    if st.button("🖨️ Exportar / Imprimir Relatório (PDF)"):
+        st.markdown("<script>window.print();</script>", unsafe_allow_html=True)
+
     if df.empty:
         st.info("Nenhum dado cadastrado.")
     else:
@@ -215,9 +219,81 @@ if menu == "📊 Dashboard":
         col3.metric("Confirmados", len(df_dash[df_dash['Status_Clean'].str.contains("confirmado", case=False, na=False)]))
         col4.metric("Recusados", len(df_dash[df_dash['Status_Clean'].str.contains("recusado", case=False, na=False)]))
 
+        st.markdown("---")
+        c_g1, c_g2 = st.columns(2)
+
+        with c_g1:
+            st.subheader("📌 Origem das Solicitações")
+            if 'Origem_Solicitacao' in df_dash.columns and not df_dash.empty:
+                origem_counts = df_dash['Origem_Solicitacao'].value_counts().reset_index()
+                origem_counts.columns = ['Origem', 'Total']
+                chart_origem = alt.Chart(origem_counts).mark_arc(innerRadius=50).encode(
+                    theta=alt.Theta(field="Total", type="quantitative"),
+                    color=alt.Color(field="Origem", type="nominal", scale=alt.Scale(range=['#00703c', '#ffc107', '#17a2b8']))
+                ).properties(height=300)
+                st.altair_chart(chart_origem, use_container_width=True)
+
+        with c_g2:
+            st.subheader("🎯 Status dos Leads (Funil)")
+            if not df_dash.empty:
+                status_counts = df_dash['Status'].value_counts().reset_index()
+                status_counts.columns = ['Status', 'Total']
+                chart_status = alt.Chart(status_counts).mark_bar().encode(
+                    x=alt.X('Total:Q', title='Quantidade'),
+                    y=alt.Y('Status:N', sort='-x', title='Status'),
+                    color=alt.Color('Status:N', legend=None)
+                ).properties(height=300)
+                st.altair_chart(chart_status, use_container_width=True)
+
+        st.markdown("---")
+        c_g3, c_g4 = st.columns(2)
+
+        with c_g3:
+            st.subheader("❌ Motivos de Recusa")
+            df_recusados = df_dash[df_dash['Status_Clean'].str.contains("recusado", case=False, na=False)]
+            if not df_recusados.empty and 'Motivo Recusa' in df_recusados.columns:
+                motivo_counts = df_recusados['Motivo Recusa'].value_counts().reset_index()
+                motivo_counts.columns = ['Motivo', 'Total']
+                chart_motivo = alt.Chart(motivo_counts).mark_arc().encode(
+                    theta=alt.Theta(field="Total", type="quantitative"),
+                    color=alt.Color(field="Motivo", type="nominal")
+                ).properties(height=300)
+                st.altair_chart(chart_motivo, use_container_width=True)
+            else:
+                st.info("Nenhum dado de recusa registrado no período.")
+
+        with c_g4:
+            st.subheader("💼 Propostas Enviadas por Vendedor")
+            if not df_propostas.empty and 'Nome_Usuario' in df_propostas.columns:
+                vend_counts = df_propostas['Nome_Usuario'].value_counts().reset_index()
+                vend_counts.columns = ['Vendedor', 'Total']
+                chart_vend = alt.Chart(vend_counts).mark_bar().encode(
+                    x=alt.X('Total:Q', title='Propostas Geradas'),
+                    y=alt.Y('Vendedor:N', sort='-x', title='Responsável'),
+                    color=alt.Color('Vendedor:N', legend=None)
+                ).properties(height=300)
+                st.altair_chart(chart_vend, use_container_width=True)
+            else:
+                st.info("Nenhum registro de propostas por vendedor.")
+
+        st.markdown("---")
+        st.subheader("📈 Relatório Indicado: Receita Total Confirmada por Mês (R$)")
+        df_confirmados = df_dash[df_dash['Status_Clean'].str.contains("confirmado", case=False, na=False)]
+        if not df_confirmados.empty:
+            df_confirmados['Receita Total'] = pd.to_numeric(df_confirmados['Receita Total'], errors='coerce').fillna(0)
+            rec_mes = df_confirmados.groupby('Mês/Ano Envio')['Receita Total'].sum().reset_index()
+            chart_rec = alt.Chart(rec_mes).mark_line(point=True).encode(
+                x='Mês/Ano Envio:N',
+                y='Receita Total:Q',
+                tooltip=['Mês/Ano Envio', 'Receita Total']
+            ).properties(height=350)
+            st.altair_chart(chart_rec, use_container_width=True)
+        else:
+            st.info("Nenhuma receita confirmada no período selecionado.")
+
 # 2. Nova Solicitação
 elif menu == "🛎️ Nova Solicitação":
-    st.header("🛎️ Enviar Grupo para Vendas")
+    st.header("🛎️ Enviar Nova Solicitação de Grupo")
     
     if st.button("🧹 Limpar / Novo Formulário"):
         st.session_state["form_version"] += 1
@@ -240,7 +316,7 @@ elif menu == "🛎️ Nova Solicitação":
         df_grid = pd.DataFrame({"Data": [d.strftime("%d/%m/%Y") for d in datas_lista], "Single": [0]*dias, "Duplo": [0]*dias, "Triplo": [0]*dias})
         df_editado = st.data_editor(df_grid, hide_index=True, use_container_width=True, key=f"grid_quartos_{v}")
         
-        if st.button("🚀 Enviar Solicitação para Vendas", type="primary"):
+        if st.button("🚀 Enviar Solicitação", type="primary"):
             total_quartos = int(df_editado["Single"].sum() + df_editado["Duplo"].sum() + df_editado["Triplo"].sum())
             
             if empresa == "":
@@ -249,14 +325,17 @@ elif menu == "🛎️ Nova Solicitação":
                 st.error(f"⚠️ Solicitação não permitida! O total de apartamentos solicitados é {total_quartos}. Para reservas inferiores a 10 apartamentos, oriente o cliente a consultar diretamente em nosso site: ALL.COM")
             else:
                 id_unico = "G-" + datetime.now().strftime("%Y%m%d%H%M")
+                origem_solicitacao = "Equipe de Vendas" if perfil == "Vendas" else "Equipe de Reservas"
+                
                 nova_linha = [
                     id_unico, datetime.now().strftime("%d/%m/%Y"), empresa, contato, email, telefone, 
                     checkin.strftime("%d/%m/%Y"), checkout.strftime("%d/%m/%Y"), 
                     int(df_editado["Single"].sum()), int(df_editado["Duplo"].sum()), int(df_editado["Triplo"].sum()), 
-                    0, 0, 0, 0, "Enviado para time de vendas", "", "", df_editado.to_json(orient='records')
+                    0, 0, 0, 0, "Enviado para time de vendas", "", "", df_editado.to_json(orient='records'),
+                    origem_solicitacao, usuario_atual
                 ]
                 aba_dados.append_row(nova_linha)
-                st.success("✅ Grupo registrado com sucesso!")
+                st.success(f"✅ Grupo registrado com sucesso! (Origem: {origem_solicitacao})")
                 st.cache_resource.clear()
                 st.cache_data.clear()
                 st.session_state["form_version"] += 1
@@ -286,6 +365,23 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                 id_sel = grupo_sel.split(" - ")[0]
                 linha_atual = df_pendentes[df_pendentes['ID'] == id_sel].iloc[0]
                 
+                # Exibição detalhada da solicitação do cliente
+                st.markdown("---")
+                st.markdown("### 📋 Detalhes da Solicitação do Cliente")
+                dc1, dc2, dc3 = st.columns(3)
+                with dc1:
+                    st.write(f"**Empresa:** {linha_atual['Empresa']}")
+                    st.write(f"**Contato:** {linha_atual['Contato']}")
+                with dc2:
+                    st.write(f"**E-mail:** {linha_atual['E-mail']}")
+                    st.write(f"**Telefone:** {linha_atual['Telefone']}")
+                with dc3:
+                    st.write(f"**Período:** {linha_atual['Check-in']} até {linha_atual['Check-out']}")
+                    st.write(f"**Origem:** {linha_atual.get('Origem_Solicitacao', 'Equipe de Reservas')}")
+
+                st.write(f"**Total de Quartos Solicitados:** Single: {linha_atual['Total RN Single']} | Duplo: {linha_atual['Total RN Duplo']} | Triplo: {linha_atual['Total RN Triplo']}")
+                st.markdown("---")
+
                 rn_s = int(linha_atual['Total RN Single'] or 0)
                 rn_d = int(linha_atual['Total RN Duplo'] or 0)
                 rn_t = int(linha_atual['Total RN Triplo'] or 0)
@@ -352,16 +448,20 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         
                         extras_dados.append({"Item": ext, "Qtd": q_ext, "Valor": v_ext, "Subtotal": q_ext * v_ext})
 
-                st.subheader("4. Descrição Livre / Cardápio / Observações")
-                descricao_livre = st.text_area("Insira aqui detalhes do cardápio ou observações específicas que aparecerão na proposta:", placeholder="Ex: Almoço executivo composto por entrada, prato principal e sobremesa...", key=f"txt_desc_livre_{v}")
+                st.subheader("4. Descrição Livre / Observações")
+                descricao_livre = st.text_area("Insira aqui detalhes ou observações específicas que aparecerão na proposta:", key=f"txt_desc_livre_{v}")
 
                 st.subheader("5. Status Comercial")
                 novo_status = st.radio("Status:", ["Cotação enviada", "Confirmado", "Recusado"], horizontal=True, key=f"radio_status_comercial_{v}")
                 novo_deadline = st.date_input("Deadline", value=date.today(), key=f"input_deadline_comercial_{v}")
                 
+                motivo_recusa_input = ""
+                if novo_status == "Recusado":
+                    motivo_recusa_input = st.selectbox("Motivo da Recusa:", ["Preço Alto", "Falta de Disponibilidade", "Concorrência", "Cancelado pelo Cliente", "Outros"], key=f"sel_motivo_{v}")
+
                 if st.button("💾 Salvar e Gerar Link da Proposta", type="primary"):
                     if novo_status == "Cotação enviada" and extras_incompletos:
-                        st.error("⚠️ Atenção: Há produtos/serviços extras selecionados sem quantidade ou valor unitário preenchido (> 0). Por favor, precifique todos os extras antes de gerar a proposta.")
+                        st.error("⚠️ Atenção: Há produtos/serviços extras selecionados sem quantidade ou valor unitário preenchido (> 0).")
                     else:
                         receita_hospedagem = (rn_s * t_single) + (rn_d * t_duplo) + (rn_t * t_triplo)
                         receita_extras = sum([item["Subtotal"] for item in extras_dados])
@@ -374,6 +474,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         aba_dados.update_cell(linha_planilha, 15, receita_total)
                         aba_dados.update_cell(linha_planilha, 16, novo_status)
                         aba_dados.update_cell(linha_planilha, 17, novo_deadline.strftime("%d/%m/%Y") if novo_status == "Cotação enviada" else "")
+                        aba_dados.update_cell(linha_planilha, 18, motivo_recusa_input)
                         
                         tabela_html = ""
                         if tipologias_selecionadas:
@@ -471,7 +572,6 @@ elif menu == "📑 Acompanhamento de Propostas":
             for idx, row in df_exib.iterrows():
                 id_p = row.get('ID_Proposta', '')
                 cliente_p = row.get('Cliente', 'Cliente')
-                
                 link_proposta = row.get('Link_Proposta', '')
                 if not link_proposta or str(link_proposta).strip() == "" or str(link_proposta).lower() == "nan":
                     link_proposta = f"{URL_WEB_APP}?id={id_p}&nome={str(cliente_p).replace(' ', '%20')}"
@@ -499,9 +599,9 @@ elif menu == "👀 Follow-up":
         with t1:
             st.dataframe(df[df['Status_Clean'].str.contains("enviado", na=False)][['Data Envio', 'Empresa', 'Contato']], use_container_width=True)
         with t2:
-            st.dataframe(df[df['Status_Clean'].str.contains("cotação enviada", na=False)][['Empresa', 'Deadline', 'Receita Total']], use_container_width=True)
+            st.dataframe(df[df['Status_Clean'].str.contains("cotação enviada", case=False, na=False)][['Empresa', 'Deadline', 'Receita Total']], use_container_width=True)
         with t3:
-            st.dataframe(df[df['Status_Clean'].str.contains("confirmado", na=False)][['Check-in', 'Check-out', 'Empresa', 'Receita Total']], use_container_width=True)
+            st.dataframe(df[df['Status_Clean'].str.contains("confirmado", case=False, na=False)][['Check-in', 'Check-out', 'Empresa', 'Receita Total']], use_container_width=True)
 
 # 6. Gerenciar Usuários
 elif menu == "⚙️ Gerenciar Usuários" and perfil == "Gerencial":
@@ -529,3 +629,4 @@ elif menu == "⚙️ Gerenciar Usuários" and perfil == "Gerencial":
                     st.success(f"✅ Usuário **{u_nome}** cadastrado com sucesso!")
                     st.cache_resource.clear()
                     st.cache_data.clear()
+                    st.rerun()
