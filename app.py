@@ -389,7 +389,10 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
 
         st.markdown("---")
         novo_status = st.radio("Status Inicial:", ["Cotação enviada", "Confirmado"], horizontal=True, key=f"venda_status_{v}")
-        novo_deadline = st.date_input("Deadline para Resposta", value=date.today(), key=f"venda_dead_{v}")
+        
+        novo_deadline = date.today()
+        if novo_status != "Recusado":
+            novo_deadline = st.date_input("Deadline para Resposta", value=date.today(), key=f"venda_dead_{v}")
         
         motivos_recusa_lista = ["Preço", "Evento cancelado", "Categoria do Hotel", "Política de Pagamento", "Condições de Cancelamento", "Configuração dos Quartos", "Localização", "Sem retorno do cliente", "Outros"]
         motivo_recusa_input = ""
@@ -399,7 +402,9 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
                 outro_texto = st.text_input("Especifique o motivo:", key=f"venda_txt_outro_{v}")
                 if outro_texto: motivo_recusa_input = f"Outros: {outro_texto}"
 
-        if st.button("🚀 Salvar Venda Direta e Gerar Proposta", type="primary"):
+        texto_botao = "💾 Registrar Recusa e Encerrar" if novo_status == "Recusado" else "🚀 Salvar Venda Direta e Gerar Proposta"
+        
+        if st.button(texto_botao, type="primary"):
             if empresa == "":
                 st.error("O nome da Empresa é obrigatório.")
             elif total_quartos < 10:
@@ -439,19 +444,6 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
                             receita_extras += sub
                             tabela_html += f"<tr><td>{nome}</td><td>{qtd}</td><td>R$ {val:.2f}</td><td>R$ {sub:.2f}</td></tr>"
                     tabela_html += "</table>"
-
-                # >>> ADICIONANDO AS CONDIÇÕES GERAIS E POLÍTICAS À PROPOSTA <<<
-                tabela_html += """
-                <br>
-                <h4>Políticas e Condições Gerais</h4>
-                <p style="font-size: 14px; text-align: justify; line-height: 1.5;">
-                <b>1. Horários:</b> O Check-in inicia a partir das 14h00 e o Check-out deve ser realizado até as 12h00.<br>
-                <b>2. Política de Pagamento:</b> O método de pagamento (Faturamento sujeito à aprovação ou Pagamento Antecipado) deve ser alinhado e formalizado com o setor de Vendas/Reservas.<br>
-                <b>3. Política de Cancelamento e No-Show:</b> Cancelamentos ou reduções de bloqueio estão sujeitos às regras estipuladas em contrato. Em caso de não comparecimento (No-Show), haverá a cobrança integral da primeira diária.<br>
-                <b>4. Validade da Proposta:</b> Tarifas e disponibilidade estão sujeitas a alterações sem aviso prévio até a assinatura oficial do contrato.<br>
-                <b>5. Impostos e Taxas:</b> As tarifas de hospedagem discriminadas acima já contemplam o imposto ISS (5%). A Taxa de Turismo é opcional e não está inclusa no valor.
-                </p>
-                """
                 
                 receita_total = float((receita_hospedagem * 1.05) + receita_extras)
                 id_unico = "V-" + datetime.now().strftime("%Y%m%d%H%M")
@@ -460,7 +452,7 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
                     id_unico, datetime.now().strftime("%d/%m/%Y"), empresa, contato, email, telefone, 
                     checkin.strftime("%d/%m/%Y"), checkout.strftime("%d/%m/%Y"), 
                     rn_s, rn_d, rn_t, t_single, t_duplo, t_triplo, receita_total, 
-                    novo_status, novo_deadline.strftime("%d/%m/%Y"), motivo_recusa_input, df_editado.to_json(orient='records'), usuario_atual
+                    novo_status, novo_deadline.strftime("%d/%m/%Y") if novo_status != "Recusado" else "", motivo_recusa_input, df_editado.to_json(orient='records'), usuario_atual
                 ]
                 aba_vendas_diretas.append_row(nova_linha)
                 
@@ -491,7 +483,8 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
                     aba_propostas.append_row(nova_linha_proposta)
 
                 st.success("✅ Venda Direta salva e proposta gerada com sucesso!")
-                st.code(link_rastreavel)
+                if novo_status != "Recusado":
+                    st.code(link_rastreavel)
                 st.cache_resource.clear()
                 st.cache_data.clear()
 
@@ -566,7 +559,10 @@ elif menu == "💼 Gestão de Vendas & Propostas":
 
                 st.markdown("---")
                 novo_status = st.radio("Status:", ["Cotação enviada", "Confirmado", "Recusado"], horizontal=True, key=f"radio_status_comercial_{v}")
-                novo_deadline = st.date_input("Deadline", value=date.today(), key=f"input_deadline_comercial_{v}")
+                
+                novo_deadline = date.today()
+                if novo_status != "Recusado":
+                    novo_deadline = st.date_input("Deadline", value=date.today(), key=f"input_deadline_comercial_{v}")
                 
                 motivos_recusa_lista = ["Preço", "Evento cancelado", "Categoria do Hotel", "Política de Pagamento", "Condições de Cancelamento", "Configuração dos Quartos", "Localização", "Sem retorno do cliente", "Outros"]
                 motivo_recusa_input = ""
@@ -576,7 +572,9 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         outro_texto = st.text_input("Especifique o motivo:", key=f"txt_outro_motivo_{v}")
                         if outro_texto: motivo_recusa_input = f"Outros: {outro_texto}"
 
-                if st.button("💾 Salvar e Gerar Link da Proposta", type="primary"):
+                texto_botao = "💾 Registrar Recusa e Encerrar" if novo_status == "Recusado" else "💾 Salvar e Gerar Link da Proposta"
+                
+                if st.button(texto_botao, type="primary"):
                     tipologias_str = ", ".join(tipologias_selecionadas) if tipologias_selecionadas else "Conforme disponibilidade"
                     
                     tabela_html = "<h4>Hospedagem (Com ISS 5%):</h4>"
@@ -611,19 +609,6 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                                 receita_extras += sub
                                 tabela_html += f"<tr><td>{nome}</td><td>{qtd}</td><td>R$ {val:.2f}</td><td>R$ {sub:.2f}</td></tr>"
                         tabela_html += "</table>"
-
-                    # >>> ADICIONANDO AS CONDIÇÕES GERAIS E POLÍTICAS À PROPOSTA <<<
-                    tabela_html += """
-                    <br>
-                    <h4>Políticas e Condições Gerais</h4>
-                    <p style="font-size: 14px; text-align: justify; line-height: 1.5;">
-                    <b>1. Horários:</b> O Check-in inicia a partir das 14h00 e o Check-out deve ser realizado até as 12h00.<br>
-                    <b>2. Política de Pagamento:</b> O método de pagamento (Faturamento sujeito à aprovação ou Pagamento Antecipado) deve ser alinhado e formalizado com o setor de Vendas/Reservas.<br>
-                    <b>3. Política de Cancelamento e No-Show:</b> Cancelamentos ou reduções de bloqueio estão sujeitos às regras estipuladas em contrato. Em caso de não comparecimento (No-Show), haverá a cobrança integral da primeira diária.<br>
-                    <b>4. Validade da Proposta:</b> Tarifas e disponibilidade estão sujeitas a alterações sem aviso prévio até a assinatura oficial do contrato.<br>
-                    <b>5. Impostos e Taxas:</b> As tarifas de hospedagem discriminadas acima já contemplam o imposto ISS (5%). A Taxa de Turismo é opcional e não está inclusa no valor.
-                    </p>
-                    """
                     
                     receita_total = float((receita_hospedagem * 1.05) + receita_extras)
                     
@@ -641,7 +626,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         alvo_aba.update_cell(linha_planilha, 14, t_triplo)
                         alvo_aba.update_cell(linha_planilha, 15, receita_total)
                         alvo_aba.update_cell(linha_planilha, 16, novo_status)
-                        alvo_aba.update_cell(linha_planilha, 17, novo_deadline.strftime("%d/%m/%Y") if novo_status == "Cotação enviada" else "")
+                        alvo_aba.update_cell(linha_planilha, 17, novo_deadline.strftime("%d/%m/%Y") if novo_status != "Recusado" else "")
                         alvo_aba.update_cell(linha_planilha, 18, motivo_recusa_input)
                     
                     id_prop = f"PROP-{id_sel}"
@@ -671,8 +656,9 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     else:
                         aba_propostas.append_row(nova_linha_proposta)
                     
-                    st.success(f"✅ Proposta gerada/atualizada com sucesso! Status: {novo_status}")
-                    st.code(link_rastreavel)
+                    st.success(f"✅ Salvo com sucesso! Status: {novo_status}")
+                    if novo_status != "Recusado":
+                        st.code(link_rastreavel)
                     st.cache_resource.clear()
                     st.cache_data.clear()
                     st.session_state["form_version"] += 1
@@ -684,11 +670,9 @@ elif menu == "📑 Acompanhamento de Propostas":
     if df_propostas.empty:
         st.info("Nenhuma proposta registrada.")
     else:
-        # Pega as colunas exatas de como estão lá na planilha do Google
         colunas_reais = df_propostas.columns.tolist()
         
         for idx, row in df_propostas.iterrows():
-            # Extração dos dados básicos (ID, Cliente, Status, Valor, Criador, Link)
             id_p = row['ID_Proposta'] if 'ID_Proposta' in colunas_reais else row.iloc[0] if len(row) > 0 else ''
             cliente_p = row['Cliente'] if 'Cliente' in colunas_reais else row.iloc[1] if len(row) > 1 else 'Cliente'
             status_p = row['Status'] if 'Status' in colunas_reais else row.iloc[5] if len(row) > 5 else ''
