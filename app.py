@@ -115,7 +115,6 @@ def gerar_pdf_relatorio(df_dados, total_leads, prop_env, confirmados, recusados)
     elementos.append(Paragraph(f"Data de Emissão: {datetime.now().strftime('%d/%m/%Y %H:%M')}", sub_estilo))
     elementos.append(Spacer(1, 10))
     
-    # Tabela de Métricas Principais
     dados_tabela = [
         ["Métrica", "Quantidade"],
         ["Total de Leads / Solicitações", str(total_leads)],
@@ -206,20 +205,55 @@ try:
     
     @st.cache_data(ttl=60)
     def carregar_dados_gerais():
+        cabecalho_padrao = ['ID', 'Data Envio', 'Empresa', 'Contato', 'E-mail', 'Telefone', 'Check-in', 'Check-out', 'Total RN Single', 'Total RN Duplo', 'Total RN Triplo', 'Tarifa Single', 'Tarifa Duplo', 'Tarifa Triplo', 'Receita Total', 'Status', 'Deadline', 'Motivo Recusa', 'Mapa de Quartos', 'Criado_Por']
+        
+        # Leitura de ABA DADOS (Equipe Reservas)
         todos_dados = aba_dados.get_all_values()
         if not todos_dados or len(todos_dados) <= 1:
-            df_d = pd.DataFrame()
+            df_d = pd.DataFrame(columns=cabecalho_padrao)
+            df_d['Origem_Fluxo'] = pd.Series(dtype='str')
         else:
-            h_d = [str(h).strip() if str(h).strip() != "" else f"Coluna_{i}" for i, h in enumerate(todos_dados[0])]
-            df_d = pd.DataFrame(todos_dados[1:], columns=h_d)
+            max_cols = max(len(row) for row in todos_dados)
+            h_d = []
+            for i in range(max_cols):
+                if i < len(todos_dados[0]) and str(todos_dados[0][i]).strip() != "":
+                    h_d.append(str(todos_dados[0][i]).strip())
+                else:
+                    h_d.append(cabecalho_padrao[i] if i < len(cabecalho_padrao) else f"Coluna_{i}")
+            
+            # Preenchimento seguro das linhas vazias no Google Sheets
+            dados_pad = []
+            for row in todos_dados[1:]:
+                row_pad = list(row)
+                while len(row_pad) < max_cols:
+                    row_pad.append("")
+                dados_pad.append(row_pad)
+                
+            df_d = pd.DataFrame(dados_pad, columns=h_d)
             df_d['Origem_Fluxo'] = 'Equipe de Reservas'
             
+        # Leitura de VENDAS DIRETAS
         todos_vendas = aba_vendas_diretas.get_all_values()
         if not todos_vendas or len(todos_vendas) <= 1:
-            df_v = pd.DataFrame()
+            df_v = pd.DataFrame(columns=cabecalho_padrao)
+            df_v['Origem_Fluxo'] = pd.Series(dtype='str')
         else:
-            h_v = [str(h).strip() if str(h).strip() != "" else f"Coluna_{i}" for i, h in enumerate(todos_vendas[0])]
-            df_v = pd.DataFrame(todos_vendas[1:], columns=h_v)
+            max_cols_v = max(len(row) for row in todos_vendas)
+            h_v = []
+            for i in range(max_cols_v):
+                if i < len(todos_vendas[0]) and str(todos_vendas[0][i]).strip() != "":
+                    h_v.append(str(todos_vendas[0][i]).strip())
+                else:
+                    h_v.append(cabecalho_padrao[i] if i < len(cabecalho_padrao) else f"Coluna_{i}")
+            
+            vendas_pad = []
+            for row in todos_vendas[1:]:
+                row_pad = list(row)
+                while len(row_pad) < max_cols_v:
+                    row_pad.append("")
+                vendas_pad.append(row_pad)
+                
+            df_v = pd.DataFrame(vendas_pad, columns=h_v)
             df_v['Origem_Fluxo'] = 'Vendas Diretas'
             
         df_unificado = pd.concat([df_d, df_v], ignore_index=True)
@@ -235,11 +269,13 @@ try:
                 df_unificado['Criado_Por'] = 'Sistema'
             if 'Deadline' not in df_unificado.columns:
                 df_unificado['Deadline'] = ''
+            if 'Mapa de Quartos' not in df_unificado.columns:
+                df_unificado['Mapa de Quartos'] = ''
                 
             cols_numericas = ['Total RN Single', 'Total RN Duplo', 'Total RN Triplo', 'Tarifa Single', 'Tarifa Duplo', 'Tarifa Triplo', 'Receita Total']
             for col in cols_numericas:
                 if col in df_unificado.columns:
-                    df_unificado[col] = pd.to_numeric(df_unificado[col].astype(str).str.replace('R$', '').str.replace('.', '').str.replace(',', '.'), errors='coerce').fillna(0)
+                    df_unificado[col] = pd.to_numeric(df_unificado[col].astype(str).str.replace('R$', '', regex=False).str.replace('.', '', regex=False).str.replace(',', '.', regex=False), errors='coerce').fillna(0)
                     
         return df_unificado
 
@@ -363,11 +399,9 @@ menu = st.sidebar.radio("Navegação:", opcoes_menu)
 if menu == "📊 Dashboard & Analytics":
     st.header("📊 Dashboard Executivo & Performance por Usuário")
     
-    # --- BLOCO DE ALERTAS INTELIGENTES (CORES ESPECÍFICAS & PISCANTE) ---
     if not df.empty:
         hoje = pd.to_datetime(date.today())
         
-        # 1. Alerta: Solicitações sem tratativa há mais de 2 dias úteis (LARANJA)
         df_sem_trat = df[df['Status_Clean'].str.contains("enviado|solicitação", case=False, na=False)].copy()
         df_sem_trat['Data_Envio_Parsed'] = pd.to_datetime(df_sem_trat['Data Envio'], format='%d/%m/%Y', errors='coerce')
         
@@ -382,7 +416,6 @@ if menu == "📊 Dashboard & Analytics":
         if contador_sem_tratativa > 0:
             st.markdown(f'<div class="alerta-laranja">⚠️ ATENÇÃO: Existem {contador_sem_tratativa} solicitação(ões) sem tratativa comercial há mais de 2 dias úteis!</div>', unsafe_allow_html=True)
 
-        # 2. Alerta: Deadlines vencendo hoje ( AMARELO )
         df_deadlines = df[~df['Status_Clean'].isin(['confirmado', 'recusado', 'enviado para time de vendas'])].copy()
         df_deadlines['Deadline_Parsed'] = pd.to_datetime(df_deadlines['Deadline'], format='%d/%m/%Y', errors='coerce')
         
@@ -390,11 +423,9 @@ if menu == "📊 Dashboard & Analytics":
         if vencendo_hoje > 0:
             st.markdown(f'<div class="alerta-amarelo">⏳ ALERTA DE PRAZO: Existem {vencendo_hoje} proposta(s) com DEADLINE VENCENDO HOJE!</div>', unsafe_allow_html=True)
 
-        # 3. Alerta: Deadlines vencidos ( VERMELHO )
         vencidos = len(df_deadlines[df_deadlines['Deadline_Parsed'].dt.date < hoje.date()])
         if vencidos > 0:
             st.markdown(f'<div class="alerta-vermelho">🚨 URGENTE: Existem {vencidos} proposta(s) com DEADLINE VENCIDO sem confirmação!</div>', unsafe_allow_html=True)
-    # ------------------------------------------------------------------
 
     if df.empty:
         st.info("Nenhum dado cadastrado.")
@@ -739,15 +770,21 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     dias_bloco = (checkout_dt - checkin_dt).days
 
                     st.markdown("### 🛏️ Atualizar Quantidade de Acomodações por Dia (Ajuste)")
-                    if mapa_quartos_salvo and str(mapa_quartos_salvo).startswith("["):
+                    df_grid_inicial = None
+                    if pd.notna(mapa_quartos_salvo) and str(mapa_quartos_salvo).strip().startswith("["):
                         try:
-                            df_grid_inicial = pd.read_json(mapa_quartos_salvo)
-                        except:
-                            datas_l = [checkin_dt + timedelta(days=i) for i in range(dias_bloco)]
-                            df_grid_inicial = pd.DataFrame({"Data": [d.strftime("%d/%m/%Y") for d in datas_l], "Single": [0]*dias_bloco, "Duplo": [0]*dias_bloco, "Triplo": [0]*dias_bloco})
-                    else:
+                            df_grid_inicial = pd.read_json(io.StringIO(str(mapa_quartos_salvo)))
+                        except Exception:
+                            pass
+                            
+                    if df_grid_inicial is None or df_grid_inicial.empty:
                         datas_l = [checkin_dt + timedelta(days=i) for i in range(dias_bloco)]
-                        df_grid_inicial = pd.DataFrame({"Data": [d.strftime("%d/%m/%Y") for d in datas_l], "Single": [0]*dias_bloco, "Duplo": [0]*dias_bloco, "Triplo": [0]*dias_bloco})
+                        df_grid_inicial = pd.DataFrame({
+                            "Data": [d.strftime("%d/%m/%Y") for d in datas_l], 
+                            "Single": [0]*dias_bloco, 
+                            "Duplo": [0]*dias_bloco, 
+                            "Triplo": [0]*dias_bloco
+                        })
 
                     df_editado_gestao = st.data_editor(df_grid_inicial, hide_index=True, use_container_width=True, key=f"g_grid_quartos_{v}")
                     
