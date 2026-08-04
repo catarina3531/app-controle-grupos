@@ -37,7 +37,7 @@ URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1_vvU_tgDtHCqtoKG4xR5XMfm
 URL_WEB_APP = "https://script.google.com/macros/s/AKfycbz7vQ65GWPeo1_qJpngvHkYG3G_GMmo_XYdsT-RSzcMisSHz70rtik3ftANwA3KGme1SQ/exec"
 
 def obter_tipologias_compativeis(tipo_quarto):
-    """Retorna as opções de tipologias estritamente compatíveis com o tipo de quarto selecionado"""
+    """Retorna as opções de tipologias compatíveis com o tipo de quarto selecionado"""
     if tipo_quarto == "Single" or tipo_quarto == "Duplo":
         return [
             "DBD / Standard (01 cama de casal)",
@@ -367,26 +367,26 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
         rn_t = int(df_editado["Triplo"].sum())
         total_quartos = rn_s + rn_d + rn_t
 
-        st.markdown("### 💰 1. Precificação e Tipologia por Tarifa NET")
+        st.markdown("### 💰 1. Precificação e Tipologias por Tarifa NET")
         c1, c2, c3 = st.columns(3)
         t_single, t_duplo, t_triplo = 0.0, 0.0, 0.0
-        tipo_s, tipo_d, tipo_t = "", "", ""
+        tipos_s_sel, tipos_d_sel, tipos_t_sel = [], [], []
 
         with c1:
             if rn_s > 0:
                 st.markdown("#### Diária Single")
                 t_single = st.number_input("Tarifa Single (R$)", min_value=0.0, value=0.0, key=f"v_t_single_{v}")
-                tipo_s = st.selectbox("Tipologia Single:", options=obter_tipologias_compativeis("Single"), key=f"v_tipo_s_{v}")
+                tipos_s_sel = st.multiselect("Tipologias Single:", options=obter_tipologias_compativeis("Single"), key=f"v_tipo_s_{v}")
         with c2:
             if rn_d > 0:
                 st.markdown("#### Diária Dupla")
                 t_duplo = st.number_input("Tarifa Duplo (R$)", min_value=0.0, value=0.0, key=f"v_t_duplo_{v}")
-                tipo_d = st.selectbox("Tipologia Duplo:", options=obter_tipologias_compativeis("Duplo"), key=f"v_tipo_d_{v}")
+                tipos_d_sel = st.multiselect("Tipologias Duplo:", options=obter_tipologias_compativeis("Duplo"), key=f"v_tipo_d_{v}")
         with c3:
             if rn_t > 0:
                 st.markdown("#### Diária Tripla")
                 t_triplo = st.number_input("Tarifa Triplo (R$)", min_value=0.0, value=0.0, key=f"v_t_triplo_{v}")
-                tipo_t = st.selectbox("Tipologia Triplo:", options=obter_tipologias_compativeis("Triplo"), key=f"v_tipo_t_{v}")
+                tipos_t_sel = st.multiselect("Tipologias Triplo:", options=obter_tipologias_compativeis("Triplo"), key=f"v_tipo_t_{v}")
 
         st.markdown("### 🍽️ 2. Produtos e Serviços Extras")
         st.write("Adicione refeições, maleiro, diárias de salas, etc.")
@@ -416,22 +416,26 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
             elif total_quartos < 10:
                 st.error(f"⚠️ Mínimo de 10 apartamentos. Total atual: {total_quartos}")
             else:
+                str_tipos_s = ", ".join(tipos_s_sel) if tipos_s_sel else "Conforme disponibilidade"
+                str_tipos_d = ", ".join(tipos_d_sel) if tipos_d_sel else "Conforme disponibilidade"
+                str_tipos_t = ", ".join(tipos_t_sel) if tipos_t_sel else "Conforme disponibilidade"
+
                 tabela_html = "<h4>Hospedagem (Com ISS 5%):</h4>"
-                tabela_html += "<table><tr><th>Acomodação</th><th>Tipologia</th><th>Qtd / RN</th><th>Valor Unit. NET</th><th>Subtotal (com ISS 5%)</th></tr>"
+                tabela_html += "<table><tr><th>Acomodação</th><th>Tipologia(s) Selecionada(s)</th><th>Qtd / RN</th><th>Valor Unit. NET</th><th>Subtotal (com ISS 5%)</th></tr>"
                 
                 receita_hospedagem = 0
                 if rn_s > 0 and t_single > 0:
                     sub = (rn_s * t_single) * 1.05
                     receita_hospedagem += (rn_s * t_single)
-                    tabela_html += f"<tr><td>Diária Single</td><td>{tipo_s}</td><td>{rn_s}</td><td>R$ {t_single:.2f}</td><td>R$ {sub:.2f}</td></tr>"
+                    tabela_html += f"<tr><td>Diária Single</td><td>{str_tipos_s}</td><td>{rn_s}</td><td>R$ {t_single:.2f}</td><td>R$ {sub:.2f}</td></tr>"
                 if rn_d > 0 and t_duplo > 0:
                     sub = (rn_d * t_duplo) * 1.05
                     receita_hospedagem += (rn_d * t_duplo)
-                    tabela_html += f"<tr><td>Diária Dupla</td><td>{tipo_d}</td><td>{rn_d}</td><td>R$ {t_duplo:.2f}</td><td>R$ {sub:.2f}</td></tr>"
+                    tabela_html += f"<tr><td>Diária Dupla</td><td>{str_tipos_d}</td><td>{rn_d}</td><td>R$ {t_duplo:.2f}</td><td>R$ {sub:.2f}</td></tr>"
                 if rn_t > 0 and t_triplo > 0:
                     sub = (rn_t * t_triplo) * 1.05
                     receita_hospedagem += (rn_t * t_triplo)
-                    tabela_html += f"<tr><td>Diária Tripla</td><td>{tipo_t}</td><td>{rn_t}</td><td>R$ {t_triplo:.2f}</td><td>R$ {sub:.2f}</td></tr>"
+                    tabela_html += f"<tr><td>Diária Tripla</td><td>{str_tipos_t}</td><td>{rn_t}</td><td>R$ {t_triplo:.2f}</td><td>R$ {sub:.2f}</td></tr>"
                 tabela_html += "</table>"
                 
                 receita_extras = 0
@@ -587,26 +591,26 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     tarifa_duplo_salva = float(linha_atual.get('Tarifa Duplo', 0.0) or 0.0)
                     tarifa_triplo_salva = float(linha_atual.get('Tarifa Triplo', 0.0) or 0.0)
 
-                    st.markdown("### 💰 1. Precificação e Tipologia por Tarifa NET")
+                    st.markdown("### 💰 1. Precificação e Tipologias por Tarifa NET")
                     c1, c2, c3 = st.columns(3)
                     t_single, t_duplo, t_triplo = 0.0, 0.0, 0.0
-                    tipo_s, tipo_d, tipo_t = "", "", ""
+                    tipos_s_sel, tipos_d_sel, tipos_t_sel = [], [], []
                     
                     with c1:
                         if rn_s > 0:
                             st.markdown("#### Diária Single")
                             t_single = st.number_input("Tarifa Single (R$)", value=tarifa_single_salva, key=f"g_ts_{v}")
-                            tipo_s = st.selectbox("Tipologia Single:", options=obter_tipologias_compativeis("Single"), key=f"g_tipo_s_{v}")
+                            tipos_s_sel = st.multiselect("Tipologias Single:", options=obter_tipologias_compativeis("Single"), key=f"g_tipo_s_{v}")
                     with c2:
                         if rn_d > 0:
                             st.markdown("#### Diária Dupla")
                             t_duplo = st.number_input("Tarifa Duplo (R$)", value=tarifa_duplo_salva, key=f"g_td_{v}")
-                            tipo_d = st.selectbox("Tipologia Duplo:", options=obter_tipologias_compativeis("Duplo"), key=f"g_tipo_d_{v}")
+                            tipos_d_sel = st.multiselect("Tipologias Duplo:", options=obter_tipologias_compativeis("Duplo"), key=f"g_tipo_d_{v}")
                     with c3:
                         if rn_t > 0:
                             st.markdown("#### Diária Tripla")
                             t_triplo = st.number_input("Tarifa Triplo (R$)", value=tarifa_triplo_salva, key=f"g_tt_{v}")
-                            tipo_t = st.selectbox("Tipologia Triplo:", options=obter_tipologias_compativeis("Triplo"), key=f"g_tipo_t_{v}")
+                            tipos_t_sel = st.multiselect("Tipologias Triplo:", options=obter_tipologias_compativeis("Triplo"), key=f"g_tipo_t_{v}")
 
                     st.markdown("### 🍽️ 2. Produtos e Serviços Extras")
                     st.write("Adicione refeições, maleiro, diárias de salas, etc.")
@@ -631,22 +635,26 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     texto_botao = "💾 Registrar Recusa e Encerrar" if novo_status == "Recusado" else "💾 Salvar e Gerar Link da Proposta"
                     
                     if st.button(texto_botao, type="primary"):
+                        str_tipos_s = ", ".join(tipos_s_sel) if tipos_s_sel else "Conforme disponibilidade"
+                        str_tipos_d = ", ".join(tipos_d_sel) if tipos_d_sel else "Conforme disponibilidade"
+                        str_tipos_t = ", ".join(tipos_t_sel) if tipos_t_sel else "Conforme disponibilidade"
+
                         tabela_html = "<h4>Hospedagem (Com ISS 5%):</h4>"
-                        tabela_html += "<table><tr><th>Acomodação</th><th>Tipologia</th><th>Qtd / RN</th><th>Valor Unit. NET</th><th>Subtotal (com ISS 5%)</th></tr>"
+                        tabela_html += "<table><tr><th>Acomodação</th><th>Tipologia(s) Selecionada(s)</th><th>Qtd / RN</th><th>Valor Unit. NET</th><th>Subtotal (com ISS 5%)</th></tr>"
                         
                         receita_hospedagem = 0
                         if rn_s > 0 and t_single > 0:
                             sub = (rn_s * t_single) * 1.05
                             receita_hospedagem += (rn_s * t_single)
-                            tabela_html += f"<tr><td>Diária Single</td><td>{tipo_s}</td><td>{rn_s}</td><td>R$ {t_single:.2f}</td><td>R$ {sub:.2f}</td></tr>"
+                            tabela_html += f"<tr><td>Diária Single</td><td>{str_tipos_s}</td><td>{rn_s}</td><td>R$ {t_single:.2f}</td><td>R$ {sub:.2f}</td></tr>"
                         if rn_d > 0 and t_duplo > 0:
                             sub = (rn_d * t_duplo) * 1.05
                             receita_hospedagem += (rn_d * t_duplo)
-                            tabela_html += f"<tr><td>Diária Dupla</td><td>{tipo_d}</td><td>{rn_d}</td><td>R$ {t_duplo:.2f}</td><td>R$ {sub:.2f}</td></tr>"
+                            tabela_html += f"<tr><td>Diária Dupla</td><td>{str_tipos_d}</td><td>{rn_d}</td><td>R$ {t_duplo:.2f}</td><td>R$ {sub:.2f}</td></tr>"
                         if rn_t > 0 and t_triplo > 0:
                             sub = (rn_t * t_triplo) * 1.05
                             receita_hospedagem += (rn_t * t_triplo)
-                            tabela_html += f"<tr><td>Diária Tripla</td><td>{tipo_t}</td><td>{rn_t}</td><td>R$ {t_triplo:.2f}</td><td>R$ {sub:.2f}</td></tr>"
+                            tabela_html += f"<tr><td>Diária Tripla</td><td>{str_tipos_t}</td><td>{rn_t}</td><td>R$ {t_triplo:.2f}</td><td>R$ {sub:.2f}</td></tr>"
                         tabela_html += "</table>"
                         
                         receita_extras = 0
