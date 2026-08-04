@@ -262,7 +262,8 @@ if menu == "📊 Dashboard & Analytics":
 
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Total Leads / Solicitações", len(df_dash))
-        col2.metric("Propostas Enviadas", len(df_dash[df_dash['Status_Clean'].str.contains("cotação enviada|enviado", case=False, na=False)]))
+        # Correção aqui: Contando apenas quem de fato teve cotação enviada ou status de proposta gerada
+        col2.metric("Propostas Enviadas", len(df_dash[df_dash['Status_Clean'].str.contains("cotação enviada", case=False, na=False)]))
         col3.metric("Confirmados", len(df_dash[df_dash['Status_Clean'].str.contains("confirmado", case=False, na=False)]))
         col4.metric("Recusados", len(df_dash[df_dash['Status_Clean'].str.contains("recusado", case=False, na=False)]))
 
@@ -622,7 +623,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     if novo_status != "Recusado":
                         novo_deadline = st.date_input("Deadline", value=date.today() + timedelta(days=10), key=f"input_deadline_comercial_{v}")
                     
-                    motivos_recusa_lista = ["Preço", "Evento cancelado", "Categoria del Hotel", "Política de Pagamento", "Condições de Cancelamento", "Configuração dos Quartos", "Localização", "Sem retorno do cliente", "Outros"]
+                    motivos_recusa_lista = ["Preço", "Evento cancelado", "Categoria do Hotel", "Política de Pagamento", "Condições de Cancelamento", "Configuração dos Quartos", "Localização", "Sem retorno do cliente", "Outros"]
                     motivo_recusa_input = ""
                     if novo_status == "Recusado":
                         motivo_recusa_input = st.selectbox("Motivo da Recusa:", motivos_recusa_lista, key=f"sel_motivo_{v}")
