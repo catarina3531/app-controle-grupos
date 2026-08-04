@@ -64,7 +64,6 @@ URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1_vvU_tgDtHCqtoKG4xR5XMfm
 URL_WEB_APP = "https://script.google.com/macros/s/AKfycbz7vQ65GWPeo1_qJpngvHkYG3G_GMmo_XYdsT-RSzcMisSHz70rtik3ftANwA3KGme1SQ/exec"
 
 def obter_tipologias_compativeis(tipo_quarto):
-    """Retorna as opções de tipologias compatíveis com o tipo de quarto selecionado"""
     if tipo_quarto == "Single" or tipo_quarto == "Duplo":
         return [
             "DBD / Standard (01 cama de casal)",
@@ -81,14 +80,12 @@ def obter_tipologias_compativeis(tipo_quarto):
     return []
 
 def calcular_dias_uteis(data_inicio, data_fim):
-    """Calcula a quantidade de dias úteis entre duas datas (ignorando sábados e domingos)"""
     if pd.isna(data_inicio) or pd.isna(data_fim) or data_inicio > data_fim:
         return 0
     dias = pd.bdate_range(start=data_inicio, end=data_fim)
     return len(dias) - 1 if len(dias) > 0 else 0
 
 def gerar_pdf_relatorio(df_dados, total_leads, prop_env, confirmados, recusados):
-    """Gera um PDF formatado com os dados do dashboard executivo"""
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     elementos = []
@@ -207,7 +204,6 @@ try:
     def carregar_dados_gerais():
         cabecalho_padrao = ['ID', 'Data Envio', 'Empresa', 'Contato', 'E-mail', 'Telefone', 'Check-in', 'Check-out', 'Total RN Single', 'Total RN Duplo', 'Total RN Triplo', 'Tarifa Single', 'Tarifa Duplo', 'Tarifa Triplo', 'Receita Total', 'Status', 'Deadline', 'Motivo Recusa', 'Mapa de Quartos', 'Criado_Por']
         
-        # Leitura de ABA DADOS (Equipe Reservas)
         todos_dados = aba_dados.get_all_values()
         if not todos_dados or len(todos_dados) <= 1:
             df_d = pd.DataFrame(columns=cabecalho_padrao)
@@ -221,7 +217,6 @@ try:
                 else:
                     h_d.append(cabecalho_padrao[i] if i < len(cabecalho_padrao) else f"Coluna_{i}")
             
-            # Preenchimento seguro das linhas vazias no Google Sheets
             dados_pad = []
             for row in todos_dados[1:]:
                 row_pad = list(row)
@@ -232,7 +227,6 @@ try:
             df_d = pd.DataFrame(dados_pad, columns=h_d)
             df_d['Origem_Fluxo'] = 'Equipe de Reservas'
             
-        # Leitura de VENDAS DIRETAS
         todos_vendas = aba_vendas_diretas.get_all_values()
         if not todos_vendas or len(todos_vendas) <= 1:
             df_v = pd.DataFrame(columns=cabecalho_padrao)
@@ -318,7 +312,6 @@ except Exception as e:
     st.error(f"Erro ao conectar com as abas do Google Sheets: {e}")
     st.stop()
 
-# Login
 if "logado" not in st.session_state:
     st.session_state["logado"] = False
     st.session_state["usuario"] = ""
@@ -399,6 +392,7 @@ menu = st.sidebar.radio("Navegação:", opcoes_menu)
 if menu == "📊 Dashboard & Analytics":
     st.header("📊 Dashboard Executivo & Performance por Usuário")
     
+    # --- BLOCO DE ALERTAS INTELIGENTES ---
     if not df.empty:
         hoje = pd.to_datetime(date.today())
         
@@ -437,7 +431,9 @@ if menu == "📊 Dashboard & Analytics":
         
         st.sidebar.markdown("---")
         st.sidebar.subheader("🔍 Filtros Avançados")
-        tipo_filtro_data = st.sidebar.radio("Filtrar por:", ["Data de Solicitação", "Mês de Competência (Check-in)"])
+        
+        # 1. Filtro de Data
+        tipo_filtro_data = st.sidebar.radio("Filtrar por Período:", ["Data de Solicitação", "Mês de Competência (Check-in)"])
         
         if tipo_filtro_data == "Data de Solicitação":
             meses_disp = sorted(df['Mês/Ano Solicitação'].dropna().unique().tolist(), reverse=True)
@@ -448,11 +444,19 @@ if menu == "📊 Dashboard & Analytics":
             mes_sel = st.sidebar.selectbox("Selecione a Competência (Check-in):", ["Todos"] + meses_disp)
             df_dash = df[df['Mês/Ano Competência (Check-in)'].astype(str) == mes_sel] if mes_sel != "Todos" else df
 
+        # 2. Filtro de Usuário
+        if 'Criado_Por' in df_dash.columns:
+            usuarios_disp = sorted(df_dash['Criado_Por'].dropna().unique().tolist())
+            usuario_sel = st.sidebar.selectbox("Filtrar por Usuário (Responsável):", ["Todos"] + usuarios_disp)
+            if usuario_sel != "Todos":
+                df_dash = df_dash[df_dash['Criado_Por'] == usuario_sel]
+
         total_l = len(df_dash)
         prop_e = len(df_dash[df_dash['Status_Clean'].str.contains("cotação enviada", case=False, na=False)])
         conf_e = len(df_dash[df_dash['Status_Clean'].str.contains("confirmado", case=False, na=False)])
         rec_e = len(df_dash[df_dash['Status_Clean'].str.contains("recusado", case=False, na=False)])
 
+        # Cards Superiores
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Total Leads / Solicitações", total_l)
         col2.metric("Propostas Enviadas", prop_e)
@@ -470,29 +474,74 @@ if menu == "📊 Dashboard & Analytics":
         )
 
         st.markdown("---")
+        st.subheader("📈 Análise de Tendências e Performance")
+        
+        # LINHA 1 DE GRÁFICOS: Evolução e Usuários
+        c_trend1, c_trend2 = st.columns(2)
+        with c_trend1:
+            st.markdown("#### Evolução Mensal (Volume de Leads)")
+            if not df_dash.empty and 'Mês/Ano Solicitação' in df_dash.columns:
+                df_evolucao = df_dash.groupby('Mês/Ano Solicitação').size().reset_index(name='Volume')
+                chart_evolucao = alt.Chart(df_evolucao).mark_line(point=True, color='#00703c').encode(
+                    x=alt.X('Mês/Ano Solicitação:N', title='Mês/Ano'),
+                    y=alt.Y('Volume:Q', title='Qtd de Leads'),
+                    tooltip=['Mês/Ano Solicitação', 'Volume']
+                ).properties(height=300)
+                st.altair_chart(chart_evolucao, use_container_width=True)
+
+        with c_trend2:
+            st.markdown("#### Performance por Usuário")
+            if not df_dash.empty and 'Criado_Por' in df_dash.columns:
+                chart_usr = alt.Chart(df_dash).mark_bar().encode(
+                    x=alt.X('count():Q', title='Volume Tratado'),
+                    y=alt.Y('Criado_Por:N', sort='-x', title='Usuário Responsável'),
+                    color=alt.Color('Status:N', legend=alt.Legend(title="Status")),
+                    tooltip=['Criado_Por', 'Status', 'count()']
+                ).properties(height=300)
+                st.altair_chart(chart_usr, use_container_width=True)
+
+        st.markdown("---")
+        st.subheader("📊 Distribuição e Funil")
+        
+        # LINHA 2 DE GRÁFICOS: Origem e Funil de Status
         c_g1, c_g2 = st.columns(2)
         with c_g1:
-            st.subheader("📌 Comparativo de Origem (Reservas x Vendas Diretas)")
+            st.markdown("#### Origem (Reservas x Vendas Diretas)")
             if 'Origem_Fluxo' in df_dash.columns and not df_dash.empty:
                 origem_counts = df_dash['Origem_Fluxo'].value_counts().reset_index()
                 origem_counts.columns = ['Origem', 'Total']
                 chart_origem = alt.Chart(origem_counts).mark_arc(innerRadius=50).encode(
                     theta=alt.Theta(field="Total", type="quantitative"),
-                    color=alt.Color(field="Origem", type="nominal", scale=alt.Scale(range=['#00703c', '#ffc107']))
+                    color=alt.Color(field="Origem", type="nominal", scale=alt.Scale(range=['#00703c', '#ffc107'])),
+                    tooltip=['Origem', 'Total']
                 ).properties(height=300)
                 st.altair_chart(chart_origem, use_container_width=True)
 
         with c_g2:
-            st.subheader("🎯 Funil de Conversão")
+            st.markdown("#### Funil de Status Atual")
             if not df_dash.empty:
                 status_counts = df_dash['Status'].value_counts().reset_index()
                 status_counts.columns = ['Status', 'Total']
                 chart_status = alt.Chart(status_counts).mark_bar().encode(
-                    x=alt.X('Total:Q', title='Quantidade'),
+                    x=alt.X('Total:Q', title='Quantidade de Grupos'),
                     y=alt.Y('Status:N', sort='-x', title='Status'),
-                    color=alt.Color('Status:N', legend=None)
+                    color=alt.Color('Status:N', legend=None),
+                    tooltip=['Status', 'Total']
                 ).properties(height=300)
                 st.altair_chart(chart_status, use_container_width=True)
+
+        st.markdown("---")
+        st.subheader("💰 Análise Financeira por Status")
+        
+        # LINHA 3 DE GRÁFICOS: Receita Projetada
+        if not df_dash.empty and 'Receita Total' in df_dash.columns:
+            df_receita = df_dash.groupby('Status')['Receita Total'].sum().reset_index()
+            chart_receita = alt.Chart(df_receita).mark_bar(color='#2196F3').encode(
+                x=alt.X('Receita Total:Q', title='Volume Financeiro Projetado (R$)'),
+                y=alt.Y('Status:N', sort='-x', title='Status do Grupo'),
+                tooltip=[alt.Tooltip('Status'), alt.Tooltip('Receita Total:Q', format='$,.2f')]
+            ).properties(height=300)
+            st.altair_chart(chart_receita, use_container_width=True)
 
 # 2. Nova Solicitação (Reservas)
 elif menu == "🛎️ Nova Solicitação (Reservas)":
