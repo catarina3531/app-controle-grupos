@@ -47,7 +47,6 @@ def obter_tipologias_compativeis(tipo_quarto):
             "S2D / Superior (01 cama de casal e 01 cama de solteiro sobreposta)"
         ]
     elif tipo_quarto == "Triplo":
-        # TWC removido pois acomoda no máximo 2 hóspedes
         return [
             "DBC / Standard (01 cama de casal e 01 cama de solteiro sobreposta)",
             "S2D / Superior (01 cama de casal e 01 cama de solteiro sobreposta)"
@@ -510,10 +509,9 @@ elif menu == "💼 Gestão de Vendas & Propostas":
             if df_pendentes.empty:
                 st.success("Nenhum grupo pendente no momento!")
             else:
-                st.sidebar.markdown("---")
-                st.sidebar.subheader("🔍 Filtrar Gestão")
+                st.markdown("### 🔍 Filtrar Gestão por Status")
                 status_disponiveis = ["Todos"] + sorted(df_pendentes['Status'].dropna().unique().tolist())
-                status_filtro_sel = st.sidebar.selectbox("Filtrar por Status:", status_disponiveis, key="filtro_status_gestao")
+                status_filtro_sel = st.selectbox("Selecione o Status para filtrar na listagem abaixo:", status_disponiveis, key="filtro_status_gestao_principal")
                 
                 if status_filtro_sel != "Todos":
                     df_pendentes_filtrado = df_pendentes[df_pendentes['Status'] == status_filtro_sel]
@@ -624,7 +622,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     if novo_status != "Recusado":
                         novo_deadline = st.date_input("Deadline", value=date.today() + timedelta(days=10), key=f"input_deadline_comercial_{v}")
                     
-                    motivos_recusa_lista = ["Preço", "Evento cancelado", "Categoria do Hotel", "Política de Pagamento", "Condições de Cancelamento", "Configuração dos Quartos", "Localização", "Sem retorno do cliente", "Outros"]
+                    motivos_recusa_lista = ["Preço", "Evento cancelado", "Categoria del Hotel", "Política de Pagamento", "Condições de Cancelamento", "Configuração dos Quartos", "Localização", "Sem retorno do cliente", "Outros"]
                     motivo_recusa_input = ""
                     if novo_status == "Recusado":
                         motivo_recusa_input = st.selectbox("Motivo da Recusa:", motivos_recusa_lista, key=f"sel_motivo_{v}")
