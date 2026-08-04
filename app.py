@@ -17,8 +17,8 @@ st.markdown("""
     }
     .alerta-piscando {
         animation: piscar 1.2s infinite;
-        padding: 10px;
-        border-radius: 5px;
+        padding: 12px;
+        border-radius: 8px;
         background-color: #ffcccc;
         color: #990000;
         font-weight: bold;
@@ -52,6 +52,13 @@ def obter_tipologias_compativeis(tipo_quarto):
             "S2D / Superior (01 cama de casal e 01 cama de solteiro sobreposta)"
         ]
     return []
+
+def calcular_dias_uteis(data_inicio, data_fim):
+    """Calcula a quantidade de dias úteis entre duas datas (ignorando sábados e domingos)"""
+    if pd.isna(data_inicio) or pd.isna(data_fim) or data_inicio > data_fim:
+        return 0
+    dias = pd.bdate_range(start=data_inicio, end=data_fim)
+    return len(dias) - 1 if len(dias) > 0 else 0
 
 @st.cache_resource(ttl=300) 
 def conectar_planilhas():
@@ -110,6 +117,8 @@ try:
                 df_unificado['Motivo Recusa'] = 'Não informado'
             if 'Criado_Por' not in df_unificado.columns:
                 df_unificado['Criado_Por'] = 'Sistema'
+            if 'Deadline' not in df_unificado.columns:
+                df_unificado['Deadline'] = ''
                 
             cols_numericas = ['Total RN Single', 'Total RN Duplo', 'Total RN Triplo', 'Tarifa Single', 'Tarifa Duplo', 'Tarifa Triplo', 'Receita Total']
             for col in cols_numericas:
@@ -237,6 +246,40 @@ menu = st.sidebar.radio("Navegação:", opcoes_menu)
 # 1. Dashboard & Analytics
 if menu == "📊 Dashboard & Analytics":
     st.header("📊 Dashboard Executivo & Performance por Usuário")
+    
+    # --- BLOCO DE ALERTAS INTELIGENTES (PISCANTE) ---
+    if not df.empty:
+        hoje = pd.to_datetime(date.today())
+        
+        # 1. Alerta: Solicitações sem tratativa há mais de 2 dias úteis (status enviado para vendas)
+        df_sem_trat = df[df['Status_Clean'].str.contains("enviado|solicitação", case=False, na=False)].copy()
+        df_sem_trat['Data_Envio_Parsed'] = pd.to_datetime(df_sem_trat['Data Envio'], format='%d/%m/%Y', errors='coerce')
+        
+        contador_sem_tratativa = 0
+        for _, row in df_sem_trat.iterrows():
+            d_envio = row['Data_Envio_Parsed']
+            if pd.notna(d_envio):
+                dias_uteis = calcular_dias_uteis(d_envio.date(), hoje.date())
+                if dias_uteis > 2:
+                    contador_sem_tratativa += 1
+
+        if contador_sem_tratativa > 0:
+            st.markdown(f'<div class="alerta-piscando">⚠️ ATENÇÃO: Existem {contador_sem_tratativa} solicitação(ões) sem tratativa comercial há mais de 2 dias úteis!</div>', unsafe_allow_html=True)
+
+        # 2. Alerta: Deadlines vencendo hoje
+        df_deadlines = df[~df['Status_Clean'].isin(['confirmado', 'recusado', 'enviado para time de vendas'])].copy()
+        df_deadlines['Deadline_Parsed'] = pd.to_datetime(df_deadlines['Deadline'], format='%d/%m/%Y', errors='coerce')
+        
+        vencendo_hoje = len(df_deadlines[df_deadlines['Deadline_Parsed'].dt.date == hoje.date()])
+        if vencendo_hoje > 0:
+            st.markdown(f'<div class="alerta-piscando">⏳ ALERTA DE PRAZO: Existem {vencendo_hoje} proposta(s) com DEADLINE VENCENDO HOJE!</div>', unsafe_allow_html=True)
+
+        # 3. Alerta: Deadlines vencidos
+        vencidos = len(df_deadlines[df_deadlines['Deadline_Parsed'].dt.date < hoje.date()])
+        if vencidos > 0:
+            st.markdown(f'<div class="alerta-piscando">🚨 URGENTE: Existem {vencidos} proposta(s) com DEADLINE VENCIDO sem confirmação!</div>', unsafe_allow_html=True)
+    # -----------------------------------------------
+
     if st.button("🖨️ Exportar / Imprimir Relatório (PDF)"):
         st.markdown("<script>window.print();</script>", unsafe_allow_html=True)
     if df.empty:
@@ -262,7 +305,6 @@ if menu == "📊 Dashboard & Analytics":
 
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Total Leads / Solicitações", len(df_dash))
-        # Correção aqui: Contando apenas quem de fato teve cotação enviada ou status de proposta gerada
         col2.metric("Propostas Enviadas", len(df_dash[df_dash['Status_Clean'].str.contains("cotação enviada", case=False, na=False)]))
         col3.metric("Confirmados", len(df_dash[df_dash['Status_Clean'].str.contains("confirmado", case=False, na=False)]))
         col4.metric("Recusados", len(df_dash[df_dash['Status_Clean'].str.contains("recusado", case=False, na=False)]))
