@@ -36,6 +36,21 @@ st.markdown("""
 URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1_vvU_tgDtHCqtoKG4xR5XMfmnujGTXf7pndgg_aQoX0/edit?gid=0#gid=0"
 URL_WEB_APP = "https://script.google.com/macros/s/AKfycbz7vQ65GWPeo1_qJpngvHkYG3G_GMmo_XYdsT-RSzcMisSHz70rtik3ftANwA3KGme1SQ/exec"
 
+LISTA_PRODUTOS_HOSPEDAGEM = [
+    "Hospedagem Single (Diária) Apartamento DBD",
+    "Hospedagem Duplo (Diária) Apartamento DBD",
+    "Hospedagem Single (Diária) Apartamento DBC",
+    "Hospedagem Duplo (Diária) Apartamento DBC",
+    "Hospedagem Triplo (Diária) Apartamento DBC",
+    "Hospedagem Single (Diária) Apartamento TWC",
+    "Hospedagem Duplo (Diária) Apartamento TWC",
+    "Hospedagem Single (Diária) Apartamento ROH",
+    "Hospedagem Duplo (Diária) Apartamento ROH",
+    "Hospedagem Single (Diária) Apartamento S2D",
+    "Hospedagem Duplo (Diária) Apartamento S2D",
+    "Hospedagem Triplo (Diária) Apartamento S2D",
+]
+
 @st.cache_resource(ttl=300) 
 def conectar_planilhas():
     credenciais = dict(st.secrets["gcp_service_account"])
@@ -376,7 +391,7 @@ elif menu == "🛎️ Nova Solicitação (Reservas)":
                 st.session_state["form_version"] += 1
                 st.rerun()
 
-# 2.1 Nova Venda Direta
+# 2.1 Nova Venda Direta (Com os produtos específicos por tipo de apartamento)
 elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
     st.header("⚡ Nova Venda / Proposta Direta (Time de Vendas)")
     if st.button("🧹 Limpar / Novo Formulário"):
@@ -394,97 +409,124 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
     with col_in: checkin = st.date_input("Primeiro Check-in", value=date.today(), key=f"venda_checkin_{v}")
     with col_out: checkout = st.date_input("Último Check-out", value=date.today() + timedelta(days=1), key=f"venda_checkout_{v}")
     
-    dias = (checkout - checkin).days
-    if dias > 0:
-        datas_lista = [checkin + timedelta(days=i) for i in range(dias)]
-        df_grid = pd.DataFrame({"Data": [d.strftime("%d/%m/%Y") for d in datas_lista], "Single": [0]*dias, "Duplo": [0]*dias, "Triplo": [0]*dias})
-        st.write("### Selecione a quantidade de apartamentos por dia:")
-        df_editado = st.data_editor(df_grid, hide_index=True, use_container_width=True, key=f"venda_grid_quartos_{v}")
-        
-        rn_s = int(df_editado["Single"].sum())
-        rn_d = int(df_editado["Duplo"].sum())
-        rn_t = int(df_editado["Triplo"].sum())
-        total_quartos = rn_s + rn_d + rn_t
-        
-        st.subheader("Precificação & Tarifas (NET)")
-        tc1, tc2, tc3 = st.columns(3)
-        with tc1: t_single = st.number_input("Tarifa Single (R$)", min_value=0.0, value=0.0, key=f"venda_ts_{v}")
-        with tc2: t_duplo = st.number_input("Tarifa Duplo (R$)", min_value=0.0, value=0.0, key=f"venda_td_{v}")
-        with tc3: t_triplo = st.number_input("Tarifa Triplo (R$)", min_value=0.0, value=0.0, key=f"venda_tt_{v}")
-        
-        novo_status = st.radio("Status Inicial:", ["Cotação enviada", "Confirmado"], horizontal=True, key=f"venda_status_{v}")
-        novo_deadline = st.date_input("Deadline para Resposta", value=date.today(), key=f"venda_dead_{v}")
-        
-        motivos_recusa_lista = [
-            "Preço", "Evento cancelado", "Categoria do Hotel", 
-            "Política de Pagamento", "Condições de Cancelamento", 
-            "Configuração dos Quartos", "Localização", "Sem retorno do cliente", "Outros"
-        ]
-        
-        motivo_recusa_input = ""
-        if novo_status == "Recusado":
-            motivo_recusa_input = st.selectbox("Motivo da Recusa:", motivos_recusa_lista, key=f"venda_sel_motivo_{v}")
-            if motivo_recusa_input == "Outros":
-                outro_texto = st.text_input("Especifique o motivo:", key=f"venda_txt_outro_{v}")
-                if outro_texto:
-                    motivo_recusa_input = f"Outros: {outro_texto}"
+    st.markdown("---")
+    st.subheader("📦 Selecione os Produtos / Tipos de Apartamento necessários:")
+    
+    produtos_selecionados = st.multiselect(
+        "Escolha os produtos de hospedagem para este grupo:",
+        options=LISTA_PRODUTOS_HOSPEDAGEM,
+        key=f"venda_multiselect_{v}"
+    )
+    
+    tabela_dados_venda = []
+    if produtos_selecionados:
+        st.subheader("💰 Defina a Quantidade e a Tarifa NET (R$) Unitária por Produto")
+        for prod in produtos_selecionados:
+            col_p1, col_p2, col_p3 = st.columns([3, 1, 1])
+            with col_p1:
+                st.write(f"**{prod}**")
+            with col_p2:
+                qtd_prod = st.number_input(f"Qtd / RN ({prod})", min_value=0, value=1, key=f"qtd_{prod}_{v}")
+            with col_p3:
+                preco_prod = st.number_input(f"Tarifa NET R$ ({prod})", min_value=0.0, value=0.0, key=f"preco_{prod}_{v}")
+            tabela_dados_venda.append({"Produto": prod, "Quantidade": qtd_prod, "Tarifa": preco_prod})
 
-        if st.button("🚀 Salvar Venda Direta e Gerar Proposta", type="primary"):
-            if empresa == "":
-                st.error("O nome da Empresa é obrigatório.")
-            elif total_quartos < 10:
-                st.error(f"⚠️ Mínimo de 10 apartamentos. Total atual: {total_quartos}")
+    novo_status = st.radio("Status Inicial:", ["Cotação enviada", "Confirmado"], horizontal=True, key=f"venda_status_{v}")
+    novo_deadline = st.date_input("Deadline para Resposta", value=date.today(), key=f"venda_dead_{v}")
+    
+    motivos_recusa_lista = [
+        "Preço", "Evento cancelado", "Categoria do Hotel", 
+        "Política de Pagamento", "Condições de Cancelamento", 
+        "Configuração dos Quartos", "Localização", "Sem retorno do cliente", "Outros"
+    ]
+    
+    motivo_recusa_input = ""
+    if novo_status == "Recusado":
+        motivo_recusa_input = st.selectbox("Motivo da Recusa:", motivos_recusa_lista, key=f"venda_sel_motivo_{v}")
+        if motivo_recusa_input == "Outros":
+            outro_texto = st.text_input("Especifique o motivo:", key=f"venda_txt_outro_{v}")
+            if outro_texto:
+                motivo_recusa_input = f"Outros: {outro_texto}"
+
+    if st.button("🚀 Salvar Venda Direta e Gerar Proposta", type="primary"):
+        total_quartos_venda = sum([item["Quantidade"] for item in tabela_dados_venda])
+        if empresa == "":
+            st.error("O nome da Empresa é obrigatório.")
+        elif not produtos_selecionados:
+            st.error("Selecione ao menos um produto de hospedagem.")
+        elif total_quartos_venda < 10:
+            st.error(f"⚠️ Mínimo de 10 apartamentos. Total atual: {total_quartos_venda}")
+        else:
+            tabela_html = f"<h4>Discriminação da Hospedagem (Com ISS 5%):</h4>"
+            tabela_html += f"<table><tr><th>Produto / Acomodação</th><th>Qtd / RN</th><th>Valor Unit. NET</th><th>Subtotal (com ISS 5%)</th></tr>"
+            
+            receita_hospedagem = 0
+            rn_single_tot = 0
+            rn_duplo_tot = 0
+            rn_triplo_tot = 0
+            
+            for item in tabela_dados_venda:
+                p_nome = item["Produto"]
+                p_qtd = item["Quantidade"]
+                p_tarifa = item["Tarifa"]
+                subtotal_item = (p_qtd * p_tarifa) * 1.05
+                receita_hospedagem += (p_qtd * p_tarifa)
+                
+                if "Single" in p_nome: rn_single_tot += p_qtd
+                elif "Duplo" in p_nome: rn_duplo_tot += p_qtd
+                elif "Triplo" in p_nome: rn_triplo_tot += p_qtd
+                
+                if p_qtd > 0 and p_tarifa > 0:
+                    tabela_html += f"<tr><td>{p_nome}</td><td>{p_qtd}</td><td>R$ {p_tarifa:.2f}</td><td>R$ {subtotal_item:.2f}</td></tr>"
+            
+            tabela_html += "</table>"
+            receita_total = float(receita_hospedagem * 1.05)
+            id_unico = "V-" + datetime.now().strftime("%Y%m%d%H%M")
+            
+            # Mapeia tarifas médias para a planilha geral
+            t_s = tabela_dados_venda[0]["Tarifa"] if tabela_dados_venda else 0.0
+            t_d = tabela_dados_venda[0]["Tarifa"] if tabela_dados_venda else 0.0
+            t_t = tabela_dados_venda[0]["Tarifa"] if tabela_dados_venda else 0.0
+
+            nova_linha = [
+                id_unico, datetime.now().strftime("%d/%m/%Y"), empresa, contato, email, telefone, 
+                checkin.strftime("%d/%m/%Y"), checkout.strftime("%d/%m/%Y"), 
+                rn_single_tot, rn_duplo_tot, rn_triplo_tot, t_s, t_d, t_t, receita_total, 
+                novo_status, novo_deadline.strftime("%d/%m/%Y"), motivo_recusa_input, json.dumps(tabela_dados_venda), usuario_atual
+            ]
+            aba_vendas_diretas.append_row(nova_linha)
+            
+            id_prop = f"PROP-{id_unico}"
+            data_hj = datetime.now().strftime("%d/%m/%Y")
+            link_rastreavel = f"{URL_WEB_APP}?id={id_prop}&nome={empresa.replace(' ', '%20')}"
+            valor_total_formatado = f"{receita_total:,.2f}"
+            
+            u_cargo = str(st.session_state.get("cargo", "Gerente de Vendas"))
+            u_email = str(st.session_state.get("email_user", "catarina.costa@accor.com"))
+            u_tel = str(st.session_state.get("tel_user", "(11) 5085-5699"))
+
+            propostas_atuais = aba_propostas.get_all_values()
+            idx_proposta_existente = -1
+            for idx_p, p_row in enumerate(propostas_atuais[1:], start=2):
+                if p_row[0] == id_prop:
+                    idx_proposta_existente = idx_p
+                    break
+            
+            nova_linha_proposta = [
+                str(id_prop), str(empresa), str(email), str(tabela_html), 
+                str(valor_total_formatado), str(novo_status), "", str(data_hj), "",
+                str(usuario_atual), str(u_cargo), str(u_email), str(u_tel), str(link_rastreavel)
+            ]
+
+            if idx_proposta_existente != -1:
+                aba_propostas.update(f'A{idx_proposta_existente}:N{idx_proposta_existente}', [nova_linha_proposta])
             else:
-                receita_hospedagem = (rn_s * t_single) + (rn_d * t_duplo) + (rn_t * t_triplo)
-                receita_total = float(receita_hospedagem * 1.05)
-                id_unico = "V-" + datetime.now().strftime("%Y%m%d%H%M")
-                
-                nova_linha = [
-                    id_unico, datetime.now().strftime("%d/%m/%Y"), empresa, contato, email, telefone, 
-                    checkin.strftime("%d/%m/%Y"), checkout.strftime("%d/%m/%Y"), 
-                    rn_s, rn_d, rn_t, t_single, t_duplo, t_triplo, receita_total, 
-                    novo_status, novo_deadline.strftime("%d/%m/%Y"), motivo_recusa_input, df_editado.to_json(orient='records'), usuario_atual
-                ]
-                aba_vendas_diretas.append_row(nova_linha)
-                
-                tabela_html = f"<h4>Discriminação da Hospedagem (Com ISS 5%):</h4>"
-                tabela_html += f"<table><tr><th>Acomodação</th><th>Qtd / RN</th><th>Valor Unit. NET</th><th>Subtotal (com ISS 5%)</th></tr>"
-                if rn_s > 0 and t_single > 0: tabela_html += f"<tr><td>Diária Single</td><td>{rn_s}</td><td>R$ {t_single:.2f}</td><td>R$ {(rn_s * t_single * 1.05):.2f}</td></tr>"
-                if rn_d > 0 and t_duplo > 0: tabela_html += f"<tr><td>Diária Dupla</td><td>{rn_d}</td><td>R$ {t_duplo:.2f}</td><td>R$ {(rn_d * t_duplo * 1.05):.2f}</td></tr>"
-                if rn_t > 0 and t_triplo > 0: tabela_html += f"<tr><td>Diária Tripla</td><td>{rn_t}</td><td>R$ {t_triplo:.2f}</td><td>R$ {(rn_t * t_triplo * 1.05):.2f}</td></tr>"
-                tabela_html += "</table>"
-                
-                id_prop = f"PROP-{id_unico}"
-                data_hj = datetime.now().strftime("%d/%m/%Y")
-                link_rastreavel = f"{URL_WEB_APP}?id={id_prop}&nome={empresa.replace(' ', '%20')}"
-                valor_total_formatado = f"{receita_total:,.2f}"
-                
-                u_cargo = str(st.session_state.get("cargo", "Gerente de Vendas"))
-                u_email = str(st.session_state.get("email_user", "catarina.costa@accor.com"))
-                u_tel = str(st.session_state.get("tel_user", "(11) 5085-5699"))
+                aba_propostas.append_row(nova_linha_proposta)
 
-                propostas_atuais = aba_propostas.get_all_values()
-                idx_proposta_existente = -1
-                for idx_p, p_row in enumerate(propostas_atuais[1:], start=2):
-                    if p_row[0] == id_prop:
-                        idx_proposta_existente = idx_p
-                        break
-                
-                nova_linha_proposta = [
-                    str(id_prop), str(empresa), str(email), str(tabela_html), 
-                    str(valor_total_formatado), str(novo_status), "", str(data_hj), "",
-                    str(usuario_atual), str(u_cargo), str(u_email), str(u_tel), str(link_rastreavel)
-                ]
-
-                if idx_proposta_existente != -1:
-                    aba_propostas.update(f'A{idx_proposta_existente}:N{idx_proposta_existente}', [nova_linha_proposta])
-                else:
-                    aba_propostas.append_row(nova_linha_proposta)
-
-                st.success("✅ Venda Direta salva e proposta gerada com sucesso!")
-                st.code(link_rastreavel)
-                st.cache_resource.clear()
-                st.cache_data.clear()
+            st.success("✅ Venda Direta salva e proposta gerada com sucesso!")
+            st.code(link_rastreavel)
+            st.cache_resource.clear()
+            st.cache_data.clear()
 
 # 3. Gestão de Vendas & Proposta
 elif menu == "💼 Gestão de Vendas & Propostas":
@@ -547,7 +589,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                 novo_deadline = st.date_input("Deadline", value=date.today(), key=f"input_deadline_comercial_{v}")
                 
                 motivos_recusa_lista = [
-                    "Preço", "Evento cancelado", "Categoria do Hotel", 
+                    "Preço", "Evento cancelado", "Categoria du Hotel", 
                     "Política de Pagamento", "Condições de Cancelamento", 
                     "Configuração dos Quartos", "Localização", "Sem retorno do cliente", "Outros"
                 ]
