@@ -390,9 +390,9 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
         st.markdown("---")
         novo_status = st.radio("Status Inicial:", ["Cotação enviada", "Confirmado"], horizontal=True, key=f"venda_status_{v}")
         
-        novo_deadline = date.today()
+        novo_deadline = date.today() + timedelta(days=10)
         if novo_status != "Recusado":
-            novo_deadline = st.date_input("Deadline para Resposta", value=date.today(), key=f"venda_dead_{v}")
+            novo_deadline = st.date_input("Deadline para Resposta", value=date.today() + timedelta(days=10), key=f"venda_dead_{v}")
         
         motivos_recusa_lista = ["Preço", "Evento cancelado", "Categoria do Hotel", "Política de Pagamento", "Condições de Cancelamento", "Configuração dos Quartos", "Localização", "Sem retorno do cliente", "Outros"]
         motivo_recusa_input = ""
@@ -607,9 +607,9 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     st.markdown("---")
                     novo_status = st.radio("Status:", ["Cotação enviada", "Confirmado", "Recusado"], horizontal=True, key=f"radio_status_comercial_{v}")
                     
-                    novo_deadline = date.today()
+                    novo_deadline = date.today() + timedelta(days=10)
                     if novo_status != "Recusado":
-                        novo_deadline = st.date_input("Deadline", value=date.today(), key=f"input_deadline_comercial_{v}")
+                        novo_deadline = st.date_input("Deadline", value=date.today() + timedelta(days=10), key=f"input_deadline_comercial_{v}")
                     
                     motivos_recusa_lista = ["Preço", "Evento cancelado", "Categoria do Hotel", "Política de Pagamento", "Condições de Cancelamento", "Configuração dos Quartos", "Localização", "Sem retorno do cliente", "Outros"]
                     motivo_recusa_input = ""
