@@ -279,8 +279,27 @@ if menu == "📊 Dashboard & Analytics":
                 st.altair_chart(chart_status, use_container_width=True)
 
         st.markdown("---")
-        st.subheader("👥 Relatório de Atividade por Usuário (Solicitações, Propostas & Conversões)")
-        
+        st.subheader("❌ Relatório Detalhado de Motivos de Recusa")
+        df_recusados = df_dash[df_dash['Status_Clean'].str.contains("recusado", case=False, na=False)]
+        if not df_recusados.empty and 'Motivo Recusa' in df_recusados.columns:
+            motivo_counts = df_recusados['Motivo Recusa'].value_counts().reset_index()
+            motivo_counts.columns = ['Motivo', 'Total']
+            
+            c_r1, c_r2 = st.columns(2)
+            with c_r1:
+                chart_motivo = alt.Chart(motivo_counts).mark_arc(innerRadius=40).encode(
+                    theta=alt.Theta(field="Total", type="quantitative"),
+                    color=alt.Color(field="Motivo", type="nominal"),
+                    tooltip=['Motivo', 'Total']
+                ).properties(height=300)
+                st.altair_chart(chart_motivo, use_container_width=True)
+            with c_r2:
+                st.dataframe(motivo_counts, use_container_width=True, hide_index=True)
+        else:
+            st.info("Nenhum dado de recusa registrado no período.")
+
+        st.markdown("---")
+        st.subheader("👥 Relatório de Atividade por Usuário")
         if not df_dash.empty:
             solic_por_usuario = df_dash.groupby('Criado_Por').size().reset_index(name='Total Solicitações')
             conf_por_usuario = df_dash[df_dash['Status_Clean'].str.contains("confirmado", case=False, na=False)].groupby('Criado_Por').size().reset_index(name='Confirmados')
@@ -295,47 +314,26 @@ if menu == "📊 Dashboard & Analytics":
                 tabela_usuarios = tabela_usuarios.drop(columns=['Nome_Usuario'])
             tabela_usuarios = pd.merge(tabela_usuarios, conf_por_usuario, on='Criado_Por', how='left').fillna(0)
             tabela_usuarios.columns = ['Usuário / Vendedor', 'Solicitações Criadas', 'Propostas Enviadas', 'Confirmados']
-            
             st.dataframe(tabela_usuarios, use_container_width=True)
-        else:
-            st.info("Sem dados para exibir na tabela por usuário.")
 
         st.markdown("---")
-        c_g3, c_g4 = st.columns(2)
-
-        with c_g3:
-            st.subheader("❌ Percentual de Motivos de Recusa")
-            df_recusados = df_dash[df_dash['Status_Clean'].str.contains("recusado", case=False, na=False)]
-            if not df_recusados.empty and 'Motivo Recusa' in df_recusados.columns:
-                motivo_counts = df_recusados['Motivo Recusa'].value_counts().reset_index()
-                motivo_counts.columns = ['Motivo', 'Total']
-                chart_motivo = alt.Chart(motivo_counts).mark_arc().encode(
-                    theta=alt.Theta(field="Total", type="quantitative"),
-                    color=alt.Color(field="Motivo", type="nominal")
-                ).properties(height=300)
-                st.altair_chart(chart_motivo, use_container_width=True)
-            else:
-                st.info("Nenhum dado de recusa registrado.")
-
-        with c_g4:
-            st.subheader("📈 Receita Confirmada por Mês de Competência (Check-in)")
-            df_confirmados = df_dash[df_dash['Status_Clean'].str.contains("confirmado", case=False, na=False)]
-            if not df_confirmados.empty:
-                df_confirmados['Receita Total'] = pd.to_numeric(df_confirmados['Receita Total'], errors='coerce').fillna(0)
-                rec_mes = df_confirmados.groupby('Mês/Ano Competência (Check-in)')['Receita Total'].sum().reset_index()
-                chart_rec = alt.Chart(rec_mes).mark_line(point=True).encode(
-                    x='Mês/Ano Competência (Check-in):N',
-                    y='Receita Total:Q',
-                    tooltip=['Mês/Ano Competência (Check-in)', 'Receita Total']
-                ).properties(height=300)
-                st.altair_chart(chart_rec, use_container_width=True)
-            else:
-                st.info("Nenhuma receita confirmada no período.")
+        st.subheader("📈 Receita Confirmada por Mês de Competência (Check-in)")
+        df_confirmados = df_dash[df_dash['Status_Clean'].str.contains("confirmado", case=False, na=False)]
+        if not df_confirmados.empty:
+            df_confirmados['Receita Total'] = pd.to_numeric(df_confirmados['Receita Total'], errors='coerce').fillna(0)
+            rec_mes = df_confirmados.groupby('Mês/Ano Competência (Check-in)')['Receita Total'].sum().reset_index()
+            chart_rec = alt.Chart(rec_mes).mark_line(point=True).encode(
+                x='Mês/Ano Competência (Check-in):N',
+                y='Receita Total:Q',
+                tooltip=['Mês/Ano Competência (Check-in)', 'Receita Total']
+            ).properties(height=300)
+            st.altair_chart(chart_rec, use_container_width=True)
+        else:
+            st.info("Nenhuma receita confirmada no período selecionado.")
 
 # 2. Nova Solicitação (Reservas)
 elif menu == "🛎️ Nova Solicitação (Reservas)":
     st.header("🛎️ Enviar Solicitação (Equipe de Reservas)")
-    
     if st.button("🧹 Limpar / Novo Formulário"):
         st.session_state["form_version"] += 1
         st.rerun()
@@ -362,7 +360,7 @@ elif menu == "🛎️ Nova Solicitação (Reservas)":
             if empresa == "":
                 st.error("O nome da Empresa é obrigatório.")
             elif total_quartos < 10:
-                st.error(f"⚠️ Solicitação não permitida! O total de apartamentos solicitados é {total_quartos}. Mínimo de 10 aptos.")
+                st.error(f"⚠️ Mínimo de 10 apartamentos. Total atual: {total_quartos}")
             else:
                 id_unico = "G-" + datetime.now().strftime("%Y%m%d%H%M")
                 nova_linha = [
@@ -372,7 +370,7 @@ elif menu == "🛎️ Nova Solicitação (Reservas)":
                     0, 0, 0, 0, "Enviado para time de vendas", "", "", df_editado.to_json(orient='records'), usuario_atual
                 ]
                 aba_dados.append_row(nova_linha)
-                st.success("✅ Solicitação enviada com sucesso para a fila de vendas!")
+                st.success("✅ Solicitação enviada com sucesso!")
                 st.cache_resource.clear()
                 st.cache_data.clear()
                 st.session_state["form_version"] += 1
@@ -381,8 +379,6 @@ elif menu == "🛎️ Nova Solicitação (Reservas)":
 # 2.1 Nova Venda Direta
 elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
     st.header("⚡ Nova Venda / Proposta Direta (Time de Vendas)")
-    st.info("Utilize esta tela para registrar e precificar diretamente. O lead irá para Gestão de Vendas para acompanhamento.")
-
     if st.button("🧹 Limpar / Novo Formulário"):
         st.session_state["form_version"] += 1
         st.rerun()
@@ -422,11 +418,10 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
             if empresa == "":
                 st.error("O nome da Empresa é obrigatório.")
             elif total_quartos < 10:
-                st.error(f"⚠️ Total de apartamentos solicitados é {total_quartos}. Mínimo de 10 aptos.")
+                st.error(f"⚠️ Mínimo de 10 apartamentos. Total atual: {total_quartos}")
             else:
                 receita_hospedagem = (rn_s * t_single) + (rn_d * t_duplo) + (rn_t * t_triplo)
                 receita_total = float(receita_hospedagem * 1.05)
-                
                 id_unico = "V-" + datetime.now().strftime("%Y%m%d%H%M")
                 
                 nova_linha = [
@@ -436,12 +431,11 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
                     novo_status, novo_deadline.strftime("%d/%m/%Y"), "", df_editado.to_json(orient='records'), usuario_atual
                 ]
                 aba_vendas_diretas.append_row(nova_linha)
-                
-                st.success("✅ Venda Direta salva com sucesso! O lead já está disponível na Gestão de Vendas para tratativa.")
+                st.success("✅ Venda Direta salva com sucesso!")
                 st.cache_resource.clear()
                 st.cache_data.clear()
 
-# 3. Gestão de Vendas & Proposta (Aparecem os dados preenchidos anteriormente para tratativa)
+# 3. Gestão de Vendas & Proposta (Com a nova opção "Sem retorno do cliente")
 elif menu == "💼 Gestão de Vendas & Propostas":
     st.header("💼 Tratativa, Precificação e Envio de Proposta")
     if perfil.lower() not in ["vendas", "gerencial"]:
@@ -466,7 +460,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                 linha_atual = df_pendentes[df_pendentes['ID'] == id_sel].iloc[0]
                 
                 st.markdown("---")
-                st.markdown("### 📋 Detalhes da Solicitação / Dados Anteriores")
+                st.markdown("### 📋 Detalhes da Solicitação")
                 dc1, dc2, dc3 = st.columns(3)
                 with dc1:
                     st.write(f"**Empresa:** {linha_atual['Empresa']}")
@@ -477,8 +471,6 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                 with dc3:
                     st.write(f"**Período:** {linha_atual['Check-in']} até {linha_atual['Check-out']}")
                     st.write(f"**Origem:** {linha_atual.get('Origem_Fluxo', 'Reservas')}")
-
-                st.write(f"**Quartos Solicitados:** Single: {linha_atual['Total RN Single']} | Duplo: {linha_atual['Total RN Duplo']} | Triplo: {linha_atual['Total RN Triplo']}")
                 st.markdown("---")
 
                 rn_s = int(linha_atual['Total RN Single'] or 0)
@@ -496,17 +488,22 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                 with c3:
                     if rn_t > 0: t_triplo = st.number_input("Tarifa Triplo (R$)", value=float(linha_atual.get('Tarifa Triplo', 0.0) or 0.0), key=f"val_t_triplo_{v}")
                 
-                status_atual_grupo = str(linha_atual.get('Status', 'Cotação enviada'))
-                idx_default = 0
-                if "Confirmado" in status_atual_grupo: idx_default = 1
-                elif "Recusado" in status_atual_grupo: idx_default = 2
-
-                novo_status = st.radio("Status:", ["Cotação enviada", "Confirmado", "Recusado"], index=idx_default, horizontal=True, key=f"radio_status_comercial_{v}")
+                novo_status = st.radio("Status:", ["Cotação enviada", "Confirmado", "Recusado"], horizontal=True, key=f"radio_status_comercial_{v}")
                 novo_deadline = st.date_input("Deadline", value=date.today(), key=f"input_deadline_comercial_{v}")
+                
+                motivos_recusa_lista = [
+                    "Preço", "Evento cancelado", "Categoria do Hotel", 
+                    "Política de Pagamento", "Condições de Cancelamento", 
+                    "Configuração dos Quartos", "Localização", "Sem retorno do cliente", "Outros"
+                ]
                 
                 motivo_recusa_input = ""
                 if novo_status == "Recusado":
-                    motivo_recusa_input = st.selectbox("Motivo da Recusa:", ["Preço Alto", "Falta de Disponibilidade", "Concorrência", "Cancelado pelo Cliente", "Outros"], key=f"sel_motivo_{v}")
+                    motivo_recusa_input = st.selectbox("Motivo da Recusa:", motivos_recusa_lista, key=f"sel_motivo_{v}")
+                    if motivo_recusa_input == "Outros":
+                        outro_texto = st.text_input("Especifique o motivo:", key=f"txt_outro_motivo_{v}")
+                        if outro_texto:
+                            motivo_recusa_input = f"Outros: {outro_texto}"
 
                 if st.button("💾 Salvar e Gerar Link da Proposta", type="primary"):
                     receita_hospedagem = (rn_s * t_single) + (rn_d * t_duplo) + (rn_t * t_triplo)
