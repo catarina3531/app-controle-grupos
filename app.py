@@ -36,21 +36,6 @@ st.markdown("""
 URL_PLANILHA = "https://docs.google.com/spreadsheets/d/1_vvU_tgDtHCqtoKG4xR5XMfmnujGTXf7pndgg_aQoX0/edit?gid=0#gid=0"
 URL_WEB_APP = "https://script.google.com/macros/s/AKfycbz7vQ65GWPeo1_qJpngvHkYG3G_GMmo_XYdsT-RSzcMisSHz70rtik3ftANwA3KGme1SQ/exec"
 
-LISTA_PRODUTOS_HOSPEDAGEM = [
-    "Hospedagem Single (Diária) Apartamento DBD",
-    "Hospedagem Duplo (Diária) Apartamento DBD",
-    "Hospedagem Single (Diária) Apartamento DBC",
-    "Hospedagem Duplo (Diária) Apartamento DBC",
-    "Hospedagem Triplo (Diária) Apartamento DBC",
-    "Hospedagem Single (Diária) Apartamento TWC",
-    "Hospedagem Duplo (Diária) Apartamento TWC",
-    "Hospedagem Single (Diária) Apartamento ROH",
-    "Hospedagem Duplo (Diária) Apartamento ROH",
-    "Hospedagem Single (Diária) Apartamento S2D",
-    "Hospedagem Duplo (Diária) Apartamento S2D",
-    "Hospedagem Triplo (Diária) Apartamento S2D",
-]
-
 @st.cache_resource(ttl=300) 
 def conectar_planilhas():
     credenciais = dict(st.secrets["gcp_service_account"])
@@ -235,7 +220,6 @@ menu = st.sidebar.radio("Navegação:", opcoes_menu)
 # 1. Dashboard & Analytics
 if menu == "📊 Dashboard & Analytics":
     st.header("📊 Dashboard Executivo & Performance por Usuário")
-    
     if st.button("🖨️ Exportar / Imprimir Relatório (PDF)"):
         st.markdown("<script>window.print();</script>", unsafe_allow_html=True)
 
@@ -244,7 +228,6 @@ if menu == "📊 Dashboard & Analytics":
     else:
         df['Data_Envio_Dt'] = pd.to_datetime(df['Data Envio'], format='%d/%m/%Y', errors='coerce')
         df['Checkin_Dt'] = pd.to_datetime(df['Check-in'], format='%d/%m/%Y', errors='coerce')
-        
         df['Mês/Ano Solicitação'] = df['Data_Envio_Dt'].dt.to_period('M').astype(str)
         df['Mês/Ano Competência (Check-in)'] = df['Checkin_Dt'].dt.to_period('M').astype(str)
         
@@ -266,85 +249,6 @@ if menu == "📊 Dashboard & Analytics":
         col2.metric("Propostas Enviadas", len(df_dash[df_dash['Status_Clean'].str.contains("cotação enviada", case=False, na=False)]))
         col3.metric("Confirmados", len(df_dash[df_dash['Status_Clean'].str.contains("confirmado", case=False, na=False)]))
         col4.metric("Recusados", len(df_dash[df_dash['Status_Clean'].str.contains("recusado", case=False, na=False)]))
-
-        st.markdown("---")
-        c_g1, c_g2 = st.columns(2)
-
-        with c_g1:
-            st.subheader("📌 Comparativo de Origem (Reservas x Vendas Diretas)")
-            if 'Origem_Fluxo' in df_dash.columns and not df_dash.empty:
-                origem_counts = df_dash['Origem_Fluxo'].value_counts().reset_index()
-                origem_counts.columns = ['Origem', 'Total']
-                chart_origem = alt.Chart(origem_counts).mark_arc(innerRadius=50).encode(
-                    theta=alt.Theta(field="Total", type="quantitative"),
-                    color=alt.Color(field="Origem", type="nominal", scale=alt.Scale(range=['#00703c', '#ffc107']))
-                ).properties(height=300)
-                st.altair_chart(chart_origem, use_container_width=True)
-
-        with c_g2:
-            st.subheader("🎯 Funil de Conversão")
-            if not df_dash.empty:
-                status_counts = df_dash['Status'].value_counts().reset_index()
-                status_counts.columns = ['Status', 'Total']
-                chart_status = alt.Chart(status_counts).mark_bar().encode(
-                    x=alt.X('Total:Q', title='Quantidade'),
-                    y=alt.Y('Status:N', sort='-x', title='Status'),
-                    color=alt.Color('Status:N', legend=None)
-                ).properties(height=300)
-                st.altair_chart(chart_status, use_container_width=True)
-
-        st.markdown("---")
-        st.subheader("❌ Relatório Detalhado de Motivos de Recusa")
-        df_recusados = df_dash[df_dash['Status_Clean'].str.contains("recusado", case=False, na=False)]
-        if not df_recusados.empty and 'Motivo Recusa' in df_recusados.columns:
-            motivo_counts = df_recusados['Motivo Recusa'].value_counts().reset_index()
-            motivo_counts.columns = ['Motivo', 'Total']
-            
-            c_r1, c_r2 = st.columns(2)
-            with c_r1:
-                chart_motivo = alt.Chart(motivo_counts).mark_arc(innerRadius=40).encode(
-                    theta=alt.Theta(field="Total", type="quantitative"),
-                    color=alt.Color(field="Motivo", type="nominal"),
-                    tooltip=['Motivo', 'Total']
-                ).properties(height=300)
-                st.altair_chart(chart_motivo, use_container_width=True)
-            with c_r2:
-                st.dataframe(motivo_counts, use_container_width=True, hide_index=True)
-        else:
-            st.info("Nenhum dado de recusa registrado no período.")
-
-        st.markdown("---")
-        st.subheader("👥 Relatório de Atividade por Usuário")
-        if not df_dash.empty:
-            solic_por_usuario = df_dash.groupby('Criado_Por').size().reset_index(name='Total Solicitações')
-            conf_por_usuario = df_dash[df_dash['Status_Clean'].str.contains("confirmado", case=False, na=False)].groupby('Criado_Por').size().reset_index(name='Confirmados')
-            
-            if not df_propostas.empty and 'Nome_Usuario' in df_propostas.columns:
-                prop_por_usuario = df_propostas.groupby('Nome_Usuario').size().reset_index(name='Propostas Enviadas')
-            else:
-                prop_por_usuario = pd.DataFrame(columns=['Nome_Usuario', 'Propostas Enviadas'])
-                
-            tabela_usuarios = pd.merge(solic_por_usuario, prop_por_usuario, left_on='Criado_Por', right_on='Nome_Usuario', how='outer').fillna(0)
-            if 'Nome_Usuario' in tabela_usuarios.columns:
-                tabela_usuarios = tabela_usuarios.drop(columns=['Nome_Usuario'])
-            tabela_usuarios = pd.merge(tabela_usuarios, conf_por_usuario, on='Criado_Por', how='left').fillna(0)
-            tabela_usuarios.columns = ['Usuário / Vendedor', 'Solicitações Criadas', 'Propostas Enviadas', 'Confirmados']
-            st.dataframe(tabela_usuarios, use_container_width=True)
-
-        st.markdown("---")
-        st.subheader("📈 Receita Confirmada por Mês de Competência (Check-in)")
-        df_confirmados = df_dash[df_dash['Status_Clean'].str.contains("confirmado", case=False, na=False)]
-        if not df_confirmados.empty:
-            df_confirmados['Receita Total'] = pd.to_numeric(df_confirmados['Receita Total'], errors='coerce').fillna(0)
-            rec_mes = df_confirmados.groupby('Mês/Ano Competência (Check-in)')['Receita Total'].sum().reset_index()
-            chart_rec = alt.Chart(rec_mes).mark_line(point=True).encode(
-                x='Mês/Ano Competência (Check-in):N',
-                y='Receita Total:Q',
-                tooltip=['Mês/Ano Competência (Check-in)', 'Receita Total']
-            ).properties(height=300)
-            st.altair_chart(chart_rec, use_container_width=True)
-        else:
-            st.info("Nenhuma receita confirmada no período selecionado.")
 
 # 2. Nova Solicitação (Reservas)
 elif menu == "🛎️ Nova Solicitação (Reservas)":
@@ -409,116 +313,121 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
     with col_in: checkin = st.date_input("Primeiro Check-in", value=date.today(), key=f"venda_checkin_{v}")
     with col_out: checkout = st.date_input("Último Check-out", value=date.today() + timedelta(days=1), key=f"venda_checkout_{v}")
     
-    st.markdown("---")
-    st.subheader("📦 Selecione os Produtos / Tipos de Apartamento necessários:")
-    produtos_selecionados = st.multiselect("Escolha os produtos:", options=LISTA_PRODUTOS_HOSPEDAGEM, key=f"venda_multiselect_{v}")
-    
-    tabela_dados_venda = []
-    if produtos_selecionados:
-        st.subheader("💰 Defina a Quantidade e a Tarifa NET (R$) Unitária por Produto")
-        for prod in produtos_selecionados:
-            col_p1, col_p2, col_p3 = st.columns([3, 1, 1])
-            with col_p1: st.write(f"**{prod}**")
-            with col_p2: qtd_prod = st.number_input(f"Qtd / RN ({prod})", min_value=0, value=1, key=f"qtd_{prod}_{v}")
-            with col_p3: preco_prod = st.number_input(f"Tarifa NET R$ ({prod})", min_value=0.0, value=0.0, key=f"preco_{prod}_{v}")
-            tabela_dados_venda.append({"Produto": prod, "Quantidade": qtd_prod, "Tarifa": preco_prod})
+    dias = (checkout - checkin).days
+    if dias > 0:
+        datas_lista = [checkin + timedelta(days=i) for i in range(dias)]
+        df_grid = pd.DataFrame({"Data": [d.strftime("%d/%m/%Y") for d in datas_lista], "Single": [0]*dias, "Duplo": [0]*dias, "Triplo": [0]*dias})
+        df_editado = st.data_editor(df_grid, hide_index=True, use_container_width=True, key=f"venda_grid_quartos_{v}")
+        
+        rn_s = int(df_editado["Single"].sum())
+        rn_d = int(df_editado["Duplo"].sum())
+        rn_t = int(df_editado["Triplo"].sum())
+        total_quartos = rn_s + rn_d + rn_t
+        
+        # Filtro inteligente de produtos baseado nas regras de ocupação solicitadas
+        produtos_disponiveis = []
+        if rn_s > 0:
+            produtos_disponiveis.extend([
+                "Hospedagem Single (Diária) Apartamento DBD (01 cama de casal)",
+                "Hospedagem Single (Diária) Apartamento DBC (01 cama de casal e 01 cama de solteiro sobreposta)",
+                "Hospedagem Single (Diária) Apartamento TWC (02 camas de solteiro)",
+                "Hospedagem Single (Diária) Apartamento ROH (01 cama de casal)",
+                "Hospedagem Single (Diária) Apartamento S2D (01 cama de casal e 01 cama de solteiro sobreposta)"
+            ])
+        if rn_d > 0:
+            produtos_disponiveis.extend([
+                "Hospedagem Duplo (Diária) Apartamento DBD (01 cama de casal)",
+                "Hospedagem Duplo (Diária) Apartamento DBC (01 cama de casal e 01 cama de solteiro sobreposta)",
+                "Hospedagem Duplo (Diária) Apartamento TWC (02 camas de solteiro)",
+                "Hospedagem Duplo (Diária) Apartamento ROH (01 cama de casal)",
+                "Hospedagem Duplo (Diária) Apartamento S2D (01 cama de casal e 01 cama de solteiro sobreposta)"
+            ])
+        if rn_t > 0:
+            produtos_disponiveis.extend([
+                "Hospedagem Triplo (Diária) Apartamento DBC (01 cama de casal e 01 cama de solteiro sobreposta)",
+                "Hospedagem Triplo (Diária) Apartamento TWC (02 camas de solteiro)",
+                "Hospedagem Triplo (Diária) Apartamento S2D (01 cama de casal e 01 cama de solteiro sobreposta)"
+            ])
+        produtos_disponiveis = list(dict.fromkeys(produtos_disponiveis)) # Remove duplicados
 
-    novo_status = st.radio("Status Inicial:", ["Cotação enviada", "Confirmado"], horizontal=True, key=f"venda_status_{v}")
-    novo_deadline = st.date_input("Deadline para Resposta", value=date.today(), key=f"venda_dead_{v}")
-    
-    motivos_recusa_lista = [
-        "Preço", "Evento cancelado", "Categoria do Hotel", 
-        "Política de Pagamento", "Condições de Cancelamento", 
-        "Configuração dos Quartos", "Localização", "Sem retorno do cliente", "Outros"
-    ]
-    
-    motivo_recusa_input = ""
-    if novo_status == "Recusado":
-        motivo_recusa_input = st.selectbox("Motivo da Recusa:", motivos_recusa_lista, key=f"venda_sel_motivo_{v}")
-        if motivo_recusa_input == "Outros":
-            outro_texto = st.text_input("Especifique o motivo:", key=f"venda_txt_outro_{v}")
-            if outro_texto: motivo_recusa_input = f"Outros: {outro_texto}"
+        tabela_dados_venda = []
+        if produtos_disponiveis:
+            st.markdown("---")
+            st.subheader("📦 Selecione e precifique os produtos compatíveis com a solicitação:")
+            produtos_escolhidos = st.multiselect("Produtos disponíveis:", options=produtos_disponiveis, key=f"venda_ms_{v}")
+            for prod in produtos_escolhidos:
+                c1, c2, c3 = st.columns([3, 1, 1])
+                with c1: st.write(f"**{prod}**")
+                with c2: q = st.number_input(f"Qtd ({prod})", min_value=0, value=1, key=f"vq_{prod}_{v}")
+                with c3: t = st.number_input(f"Tarifa NET R$ ({prod})", min_value=0.0, value=0.0, key=f"vt_{prod}_{v}")
+                tabela_dados_venda.append({"Produto": prod, "Quantidade": q, "Tarifa": t})
 
-    if st.button("🚀 Salvar Venda Direta e Gerar Proposta", type="primary"):
-        total_quartos_venda = sum([item["Quantidade"] for item in tabela_dados_venda])
-        if empresa == "":
-            st.error("O nome da Empresa é obrigatório.")
-        elif not produtos_selecionados:
-            st.error("Selecione ao menos um produto de hospedagem.")
-        elif total_quartos_venda < 10:
-            st.error(f"⚠️ Mínimo de 10 apartamentos. Total atual: {total_quartos_venda}")
-        else:
-            tabela_html = f"<h4>Discriminação da Hospedagem (Com ISS 5%):</h4>"
-            tabela_html += f"<table><tr><th>Produto / Acomodação</th><th>Qtd / RN</th><th>Valor Unit. NET</th><th>Subtotal (com ISS 5%)</th></tr>"
-            
-            receita_hospedagem = 0
-            rn_single_tot = 0
-            rn_duplo_tot = 0
-            rn_triplo_tot = 0
-            
-            for item in tabela_dados_venda:
-                p_nome = item["Produto"]
-                p_qtd = item["Quantidade"]
-                p_tarifa = item["Tarifa"]
-                subtotal_item = (p_qtd * p_tarifa) * 1.05
-                receita_hospedagem += (p_qtd * p_tarifa)
-                
-                if "Single" in p_nome: rn_single_tot += p_qtd
-                elif "Duplo" in p_nome: rn_duplo_tot += p_qtd
-                elif "Triplo" in p_nome: rn_triplo_tot += p_qtd
-                
-                if p_qtd > 0 and p_tarifa > 0:
-                    tabela_html += f"<tr><td>{p_nome}</td><td>{p_qtd}</td><td>R$ {p_tarifa:.2f}</td><td>R$ {subtotal_item:.2f}</td></tr>"
-            
-            tabela_html += "</table>"
-            receita_total = float(receita_hospedagem * 1.05)
-            id_unico = "V-" + datetime.now().strftime("%Y%m%d%H%M")
-            
-            t_s = tabela_dados_venda[0]["Tarifa"] if tabela_dados_venda else 0.0
-            t_d = tabela_dados_venda[0]["Tarifa"] if tabela_dados_venda else 0.0
-            t_t = tabela_dados_venda[0]["Tarifa"] if tabela_dados_venda else 0.0
-
-            nova_linha = [
-                id_unico, datetime.now().strftime("%d/%m/%Y"), empresa, contato, email, telefone, 
-                checkin.strftime("%d/%m/%Y"), checkout.strftime("%d/%m/%Y"), 
-                rn_single_tot, rn_duplo_tot, rn_triplo_tot, t_s, t_d, t_t, receita_total, 
-                novo_status, novo_deadline.strftime("%d/%m/%Y"), motivo_recusa_input, json.dumps(tabela_dados_venda), usuario_atual
-            ]
-            aba_vendas_diretas.append_row(nova_linha)
-            
-            id_prop = f"PROP-{id_unico}"
-            data_hj = datetime.now().strftime("%d/%m/%Y")
-            link_rastreavel = f"{URL_WEB_APP}?id={id_prop}&nome={empresa.replace(' ', '%20')}"
-            valor_total_formatado = f"{receita_total:,.2f}"
-            
-            u_cargo = str(st.session_state.get("cargo", "Gerente de Vendas"))
-            u_email = str(st.session_state.get("email_user", "catarina.costa@accor.com"))
-            u_tel = str(st.session_state.get("tel_user", "(11) 5085-5699"))
-
-            propostas_atuais = aba_propostas.get_all_values()
-            idx_proposta_existente = -1
-            for idx_p, p_row in enumerate(propostas_atuais[1:], start=2):
-                if p_row[0] == id_prop:
-                    idx_proposta_existente = idx_p
-                    break
-            
-            nova_linha_proposta = [
-                str(id_prop), str(empresa), str(email), str(tabela_html), 
-                str(valor_total_formatado), str(novo_status), "", str(data_hj), "",
-                str(usuario_atual), str(u_cargo), str(u_email), str(u_tel), str(link_rastreavel)
-            ]
-
-            if idx_proposta_existente != -1:
-                aba_propostas.update(f'A{idx_proposta_existente}:N{idx_proposta_existente}', [nova_linha_proposta])
+        novo_status = st.radio("Status Inicial:", ["Cotação enviada", "Confirmado"], horizontal=True, key=f"venda_status_{v}")
+        novo_deadline = st.date_input("Deadline para Resposta", value=date.today(), key=f"venda_dead_{v}")
+        
+        if st.button("🚀 Salvar Venda Direta e Gerar Proposta", type="primary"):
+            if empresa == "":
+                st.error("O nome da Empresa é obrigatório.")
+            elif total_quartos < 10:
+                st.error(f"⚠️ Mínimo de 10 apartamentos. Total atual: {total_quartos}")
             else:
-                aba_propostas.append_row(nova_linha_proposta)
+                tabela_html = "<h4>Discriminação da Hospedagem (Com ISS 5%):</h4>"
+                tabela_html += "<table><tr><th>Produto / Acomodação</th><th>Qtd / RN</th><th>Valor Unit. NET</th><th>Subtotal (com ISS 5%)</th></tr>"
+                
+                receita_hospedagem = 0
+                for item in tabela_dados_venda:
+                    p_nome = item["Produto"]
+                    p_qtd = item["Quantidade"]
+                    p_tarifa = item["Tarifa"]
+                    subtotal_item = (p_qtd * p_tarifa) * 1.05
+                    receita_hospedagem += (p_qtd * p_tarifa)
+                    if p_qtd > 0 and p_tarifa > 0:
+                        tabela_html += f"<tr><td>{p_nome}</td><td>{p_qtd}</td><td>R$ {p_tarifa:.2f}</td><td>R$ {subtotal_item:.2f}</td></tr>"
+                tabela_html += "</table>"
+                
+                receita_total = float(receita_hospedagem * 1.05)
+                id_unico = "V-" + datetime.now().strftime("%Y%m%d%H%M")
+                
+                nova_linha = [
+                    id_unico, datetime.now().strftime("%d/%m/%Y"), empresa, contato, email, telefone, 
+                    checkin.strftime("%d/%m/%Y"), checkout.strftime("%d/%m/%Y"), 
+                    rn_s, rn_d, rn_t, 0, 0, 0, receita_total, 
+                    novo_status, novo_deadline.strftime("%d/%m/%Y"), "", json.dumps(tabela_dados_venda), usuario_atual
+                ]
+                aba_vendas_diretas.append_row(nova_linha)
+                
+                id_prop = f"PROP-{id_unico}"
+                data_hj = datetime.now().strftime("%d/%m/%Y")
+                link_rastreavel = f"{URL_WEB_APP}?id={id_prop}&nome={empresa.replace(' ', '%20')}"
+                
+                u_cargo = str(st.session_state.get("cargo", "Gerente de Vendas"))
+                u_email = str(st.session_state.get("email_user", "catarina.costa@accor.com"))
+                u_tel = str(st.session_state.get("tel_user", "(11) 5085-5699"))
 
-            st.success("✅ Venda Direta salva e proposta gerada com sucesso!")
-            st.code(link_rastreavel)
-            st.cache_resource.clear()
-            st.cache_data.clear()
+                propostas_atuais = aba_propostas.get_all_values()
+                idx_proposta_existente = -1
+                for idx_p, p_row in enumerate(propostas_atuais[1:], start=2):
+                    if p_row[0] == id_prop:
+                        idx_proposta_existente = idx_p
+                        break
+                
+                nova_linha_proposta = [
+                    str(id_prop), str(empresa), str(email), str(tabela_html), 
+                    f"{receita_total:,.2f}", str(novo_status), "", str(data_hj), "",
+                    str(usuario_atual), str(u_cargo), str(u_email), str(u_tel), str(link_rastreavel)
+                ]
 
-# 3. Gestão de Vendas & Proposta (Com seleção detalhada de produtos por tipo)
+                if idx_proposta_existente != -1:
+                    aba_propostas.update(f'A{idx_proposta_existente}:N{idx_proposta_existente}', [nova_linha_proposta])
+                else:
+                    aba_propostas.append_row(nova_linha_proposta)
+
+                st.success("✅ Venda Direta salva e proposta gerada com sucesso!")
+                st.code(link_rastreavel)
+                st.cache_resource.clear()
+                st.cache_data.clear()
+
+# 3. Gestão de Vendas & Proposta
 elif menu == "💼 Gestão de Vendas & Propostas":
     st.header("💼 Tratativa, Precificação e Envio de Proposta")
     if perfil.lower() not in ["vendas", "gerencial"]:
@@ -556,22 +465,48 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     st.write(f"**Origem:** {linha_atual.get('Origem_Fluxo', 'Reservas')}")
                 st.markdown("---")
 
-                st.subheader("📦 Selecione os Produtos / Tipos de Apartamento necessários:")
-                produtos_selecionados_gestao = st.multiselect(
-                    "Escolha os produtos de hospedagem para este grupo:",
-                    options=LISTA_PRODUTOS_HOSPEDAGEM,
-                    key=f"gestao_multiselect_{v}"
-                )
-                
+                rn_s = int(linha_atual['Total RN Single'] or 0)
+                rn_d = int(linha_atual['Total RN Duplo'] or 0)
+                rn_t = int(linha_atual['Total RN Triplo'] or 0)
+
+                st.write(f"**Quantidades solicitadas:** Single: {rn_s} | Duplo: {rn_d} | Triplo: {rn_t}")
+
+                # Filtro inteligente de produtos baseado nas regras de ocupação solicitadas
+                produtos_disponiveis = []
+                if rn_s > 0:
+                    produtos_disponiveis.extend([
+                        "Hospedagem Single (Diária) Apartamento DBD (01 cama de casal)",
+                        "Hospedagem Single (Diária) Apartamento DBC (01 cama de casal e 01 cama de solteiro sobreposta)",
+                        "Hospedagem Single (Diária) Apartamento TWC (02 camas de solteiro)",
+                        "Hospedagem Single (Diária) Apartamento ROH (01 cama de casal)",
+                        "Hospedagem Single (Diária) Apartamento S2D (01 cama de casal e 01 cama de solteiro sobreposta)"
+                    ])
+                if rn_d > 0:
+                    produtos_disponiveis.extend([
+                        "Hospedagem Duplo (Diária) Apartamento DBD (01 cama de casal)",
+                        "Hospedagem Duplo (Diária) Apartamento DBC (01 cama de casal e 01 cama de solteiro sobreposta)",
+                        "Hospedagem Duplo (Diária) Apartamento TWC (02 camas de solteiro)",
+                        "Hospedagem Duplo (Diária) Apartamento ROH (01 cama de casal)",
+                        "Hospedagem Duplo (Diária) Apartamento S2D (01 cama de casal e 01 cama de solteiro sobreposta)"
+                    ])
+                if rn_t > 0:
+                    produtos_disponiveis.extend([
+                        "Hospedagem Triplo (Diária) Apartamento DBC (01 cama de casal e 01 cama de solteiro sobreposta)",
+                        "Hospedagem Triplo (Diária) Apartamento TWC (02 camas de solteiro)",
+                        "Hospedagem Triplo (Diária) Apartamento S2D (01 cama de casal e 01 cama de solteiro sobreposta)"
+                    ])
+                produtos_disponiveis = list(dict.fromkeys(produtos_disponiveis))
+
                 tabela_dados_gestao = []
-                if produtos_selecionados_gestao:
-                    st.subheader("💰 Defina a Quantidade e a Tarifa NET (R$) Unitária por Produto")
-                    for prod in produtos_selecionados_gestao:
-                        col_p1, col_p2, col_p3 = st.columns([3, 1, 1])
-                        with col_p1: st.write(f"**{prod}**")
-                        with col_p2: qtd_prod = st.number_input(f"Qtd / RN ({prod})", min_value=0, value=1, key=f"gestao_qtd_{prod}_{v}")
-                        with col_p3: preco_prod = st.number_input(f"Tarifa NET R$ ({prod})", min_value=0.0, value=0.0, key=f"gestao_preco_{prod}_{v}")
-                        tabela_dados_gestao.append({"Produto": prod, "Quantidade": qtd_prod, "Tarifa": preco_prod})
+                if produtos_disponiveis:
+                    st.subheader("📦 Selecione e precifique os produtos compatíveis com a solicitação:")
+                    produtos_escolhidos_g = st.multiselect("Produtos disponíveis:", options=produtos_disponiveis, key=f"gestao_ms_{v}")
+                    for prod in produtos_escolhidos_g:
+                        c1, c2, c3 = st.columns([3, 1, 1])
+                        with c1: st.write(f"**{prod}**")
+                        with c2: q = st.number_input(f"Qtd ({prod})", min_value=0, value=1, key=f"gq_{prod}_{v}")
+                        with c3: t = st.number_input(f"Tarifa NET R$ ({prod})", min_value=0.0, value=0.0, key=f"gt_{prod}_{v}")
+                        tabela_dados_gestao.append({"Produto": prod, "Quantidade": q, "Tarifa": t})
 
                 novo_status = st.radio("Status:", ["Cotação enviada", "Confirmado", "Recusado"], horizontal=True, key=f"radio_status_comercial_{v}")
                 novo_deadline = st.date_input("Deadline", value=date.today(), key=f"input_deadline_comercial_{v}")
@@ -590,32 +525,23 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         if outro_texto: motivo_recusa_input = f"Outros: {outro_texto}"
 
                 if st.button("💾 Salvar e Gerar Link da Proposta", type="primary"):
-                    if not produtos_selecionados_gestao:
+                    if not produtos_escolhidos_g:
                         st.error("Selecione ao menos um produto de hospedagem.")
                     else:
-                        tabela_html = f"<h4>Discriminação da Hospedagem (Com ISS 5%):</h4>"
-                        tabela_html += f"<table><tr><th>Produto / Acomodação</th><th>Qtd / RN</th><th>Valor Unit. NET</th><th>Subtotal (com ISS 5%)</th></tr>"
+                        tabela_html = "<h4>Discriminação da Hospedagem (Com ISS 5%):</h4>"
+                        tabela_html += "<table><tr><th>Produto / Acomodação</th><th>Qtd / RN</th><th>Valor Unit. NET</th><th>Subtotal (com ISS 5%)</th></tr>"
                         
                         receita_hospedagem = 0
-                        rn_single_tot = 0
-                        rn_duplo_tot = 0
-                        rn_triplo_tot = 0
-                        
                         for item in tabela_dados_gestao:
                             p_nome = item["Produto"]
                             p_qtd = item["Quantidade"]
                             p_tarifa = item["Tarifa"]
                             subtotal_item = (p_qtd * p_tarifa) * 1.05
                             receita_hospedagem += (p_qtd * p_tarifa)
-                            
-                            if "Single" in p_nome: rn_single_tot += p_qtd
-                            elif "Duplo" in p_nome: rn_duplo_tot += p_qtd
-                            elif "Triplo" in p_nome: rn_triplo_tot += p_qtd
-                            
                             if p_qtd > 0 and p_tarifa > 0:
                                 tabela_html += f"<tr><td>{p_nome}</td><td>{p_qtd}</td><td>R$ {p_tarifa:.2f}</td><td>R$ {subtotal_item:.2f}</td></tr>"
-                        
                         tabela_html += "</table>"
+                        
                         receita_total = float(receita_hospedagem * 1.05)
                         
                         alvo_aba = aba_vendas_diretas if str(id_sel).startswith("V-") else aba_dados
@@ -626,26 +552,16 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                                 linha_planilha = idx_l
                                 break
                                 
-                        t_s = tabela_dados_gestao[0]["Tarifa"] if tabela_dados_gestao else 0.0
-                        t_d = tabela_dados_gestao[0]["Tarifa"] if tabela_dados_gestao else 0.0
-                        t_t = tabela_dados_gestao[0]["Tarifa"] if tabela_dados_gestao else 0.0
-
                         if linha_planilha != -1:
-                            alvo_aba.update_cell(linha_planilha, 9, rn_single_tot)
-                            alvo_aba.update_cell(linha_planilha, 10, rn_duplo_tot)
-                            alvo_aba.update_cell(linha_planilha, 11, rn_triplo_tot)
-                            alvo_aba.update_cell(linha_planilha, 12, t_s)
-                            alvo_aba.update_cell(linha_planilha, 13, t_d)
-                            alvo_aba.update_cell(linha_planilha, 14, t_t)
                             alvo_aba.update_cell(linha_planilha, 15, receita_total)
                             alvo_aba.update_cell(linha_planilha, 16, novo_status)
                             alvo_aba.update_cell(linha_planilha, 17, novo_deadline.strftime("%d/%m/%Y") if novo_status == "Cotação enviada" else "")
                             alvo_aba.update_cell(linha_planilha, 18, motivo_recusa_input)
+                            alvo_aba.update_cell(linha_planilha, 19, json.dumps(tabela_dados_gestao))
                         
                         id_prop = f"PROP-{id_sel}"
                         data_hj = datetime.now().strftime("%d/%m/%Y")
                         link_rastreavel = f"{URL_WEB_APP}?id={id_prop}&nome={linha_atual['Empresa'].replace(' ', '%20')}"
-                        valor_total_formatado = f"{receita_total:,.2f}"
                         
                         u_logado = str(st.session_state.get("usuario", "Equipe"))
                         u_cargo = str(st.session_state.get("cargo", "Gerente Geral"))
@@ -661,7 +577,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         
                         nova_linha_proposta = [
                             str(id_prop), str(linha_atual['Empresa']), str(linha_atual['E-mail']), str(tabela_html), 
-                            str(valor_total_formatado), str(novo_status), "", str(data_hj), "",
+                            f"{receita_total:,.2f}", str(novo_status), "", str(data_hj), "",
                             str(u_logado), str(u_cargo), str(u_email), str(u_tel), str(link_rastreavel)
                         ]
 
