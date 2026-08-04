@@ -63,8 +63,22 @@ try:
     
     @st.cache_data(ttl=60)
     def carregar_dados_cache():
-        # Espera colunas: ID, Data Envio, Empresa, Contato, E-mail, Telefone, Check-in, Check-out, Single, Duplo, Triplo, T.Single, T.Duplo, T.Triplo, Receita, Status, Deadline, Motivo Recusa, Mapa, Origem_Solicitacao, Criado_Por
-        return aba_dados.get_all_records()
+        # Lê todos os valores crus para tratar cabeçalhos duplicados ou vazios com segurança total
+        todos_valores = aba_dados.get_all_values()
+        if not todos_valores or len(todos_valores) <= 1:
+            return []
+        header = [str(h).strip() if str(h).strip() != "" else f"Coluna_{i}" for i, h in enumerate(todos_valores[0])]
+        rows = todos_valores[1:]
+        
+        # Converte para lista de dicionários manualmente para evitar o erro do gspread
+        dados_formatados = []
+        for r in rows:
+            obj = {}
+            for idx, h_name in enumerate(header):
+                val = r[idx] if idx < len(r) else ""
+                obj[h_name] = val
+            dados_formatados.append(obj)
+        return dados_formatados
 
     @st.cache_data(ttl=60)
     def carregar_propostas_cache():
@@ -83,7 +97,6 @@ try:
         else:
             df['Status_Clean'] = ""
         
-        # Garante colunas de origem caso a planilha antiga não tenha
         if 'Origem_Solicitacao' not in df.columns:
             df['Origem_Solicitacao'] = 'Equipe de Reservas'
         if 'Criado_Por' not in df.columns:
@@ -365,7 +378,6 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                 id_sel = grupo_sel.split(" - ")[0]
                 linha_atual = df_pendentes[df_pendentes['ID'] == id_sel].iloc[0]
                 
-                # Exibição detalhada da solicitação do cliente
                 st.markdown("---")
                 st.markdown("### 📋 Detalhes da Solicitação do Cliente")
                 dc1, dc2, dc3 = st.columns(3)
