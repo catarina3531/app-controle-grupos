@@ -398,6 +398,7 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
     if dias > 0:
         datas_lista = [checkin + timedelta(days=i) for i in range(dias)]
         df_grid = pd.DataFrame({"Data": [d.strftime("%d/%m/%Y") for d in datas_lista], "Single": [0]*dias, "Duplo": [0]*dias, "Triplo": [0]*dias})
+        st.write("### Selecione a quantidade de apartamentos por dia:")
         df_editado = st.data_editor(df_grid, hide_index=True, use_container_width=True, key=f"venda_grid_quartos_{v}")
         
         rn_s = int(df_editado["Single"].sum())
@@ -414,7 +415,21 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
         novo_status = st.radio("Status Inicial:", ["Cotação enviada", "Confirmado"], horizontal=True, key=f"venda_status_{v}")
         novo_deadline = st.date_input("Deadline para Resposta", value=date.today(), key=f"venda_dead_{v}")
         
-        if st.button("🚀 Salvar Venda Direta", type="primary"):
+        motivos_recusa_lista = [
+            "Preço", "Evento cancelado", "Categoria do Hotel", 
+            "Política de Pagamento", "Condições de Cancelamento", 
+            "Configuração dos Quartos", "Localização", "Sem retorno do cliente", "Outros"
+        ]
+        
+        motivo_recusa_input = ""
+        if novo_status == "Recusado":
+            motivo_recusa_input = st.selectbox("Motivo da Recusa:", motivos_recusa_lista, key=f"venda_sel_motivo_{v}")
+            if motivo_recusa_input == "Outros":
+                outro_texto = st.text_input("Especifique o motivo:", key=f"venda_txt_outro_{v}")
+                if outro_texto:
+                    motivo_recusa_input = f"Outros: {outro_texto}"
+
+        if st.button("🚀 Salvar Venda Direta e Gerar Proposta", type="primary"):
             if empresa == "":
                 st.error("O nome da Empresa é obrigatório.")
             elif total_quartos < 10:
@@ -428,10 +443,46 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
                     id_unico, datetime.now().strftime("%d/%m/%Y"), empresa, contato, email, telefone, 
                     checkin.strftime("%d/%m/%Y"), checkout.strftime("%d/%m/%Y"), 
                     rn_s, rn_d, rn_t, t_single, t_duplo, t_triplo, receita_total, 
-                    novo_status, novo_deadline.strftime("%d/%m/%Y"), "", df_editado.to_json(orient='records'), usuario_atual
+                    novo_status, novo_deadline.strftime("%d/%m/%Y"), motivo_recusa_input, df_editado.to_json(orient='records'), usuario_atual
                 ]
                 aba_vendas_diretas.append_row(nova_linha)
-                st.success("✅ Venda Direta salva com sucesso!")
+                
+                tabela_html = f"<h4>Discriminação da Hospedagem (Com ISS 5%):</h4>"
+                tabela_html += f"<table><tr><th>Acomodação</th><th>Qtd / RN</th><th>Valor Unit. NET</th><th>Subtotal (com ISS 5%)</th></tr>"
+                if rn_s > 0 and t_single > 0: tabela_html += f"<tr><td>Diária Single</td><td>{rn_s}</td><td>R$ {t_single:.2f}</td><td>R$ {(rn_s * t_single * 1.05):.2f}</td></tr>"
+                if rn_d > 0 and t_duplo > 0: tabela_html += f"<tr><td>Diária Dupla</td><td>{rn_d}</td><td>R$ {t_duplo:.2f}</td><td>R$ {(rn_d * t_duplo * 1.05):.2f}</td></tr>"
+                if rn_t > 0 and t_triplo > 0: tabela_html += f"<tr><td>Diária Tripla</td><td>{rn_t}</td><td>R$ {t_triplo:.2f}</td><td>R$ {(rn_t * t_triplo * 1.05):.2f}</td></tr>"
+                tabela_html += "</table>"
+                
+                id_prop = f"PROP-{id_unico}"
+                data_hj = datetime.now().strftime("%d/%m/%Y")
+                link_rastreavel = f"{URL_WEB_APP}?id={id_prop}&nome={empresa.replace(' ', '%20')}"
+                valor_total_formatado = f"{receita_total:,.2f}"
+                
+                u_cargo = str(st.session_state.get("cargo", "Gerente de Vendas"))
+                u_email = str(st.session_state.get("email_user", "catarina.costa@accor.com"))
+                u_tel = str(st.session_state.get("tel_user", "(11) 5085-5699"))
+
+                propostas_atuais = aba_propostas.get_all_values()
+                idx_proposta_existente = -1
+                for idx_p, p_row in enumerate(propostas_atuais[1:], start=2):
+                    if p_row[0] == id_prop:
+                        idx_proposta_existente = idx_p
+                        break
+                
+                nova_linha_proposta = [
+                    str(id_prop), str(empresa), str(email), str(tabela_html), 
+                    str(valor_total_formatado), str(novo_status), "", str(data_hj), "",
+                    str(usuario_atual), str(u_cargo), str(u_email), str(u_tel), str(link_rastreavel)
+                ]
+
+                if idx_proposta_existente != -1:
+                    aba_propostas.update(f'A{idx_proposta_existente}:N{idx_proposta_existente}', [nova_linha_proposta])
+                else:
+                    aba_propostas.append_row(nova_linha_proposta)
+
+                st.success("✅ Venda Direta salva e proposta gerada com sucesso!")
+                st.code(link_rastreavel)
                 st.cache_resource.clear()
                 st.cache_data.clear()
 
@@ -477,7 +528,6 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                 rn_d = int(linha_atual['Total RN Duplo'] or 0)
                 rn_t = int(linha_atual['Total RN Triplo'] or 0)
                 
-                # Puxa automaticamente as tarifas já cadastradas (seja da venda direta ou edição anterior)
                 tarifa_single_salva = float(linha_atual.get('Tarifa Single', 0.0) or 0.0)
                 tarifa_duplo_salva = float(linha_atual.get('Tarifa Duplo', 0.0) or 0.0)
                 tarifa_triplo_salva = float(linha_atual.get('Tarifa Triplo', 0.0) or 0.0)
@@ -550,7 +600,6 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     valor_total_formatado = f"{receita_total:,.2f}"
 
                     propostas_atuais = aba_propostas.get_all_values()
-                    
                     idx_proposta_existente = -1
                     for idx_p, p_row in enumerate(propostas_atuais[1:], start=2):
                         if p_row[0] == id_prop:
