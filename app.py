@@ -213,7 +213,7 @@ if perfil.lower() == "gerencial":
 elif perfil.lower() == "hotel":
     opcoes_menu = ["🛎️ Nova Solicitação (Reservas)", "👀 Follow-up"]
 elif perfil.lower() == "vendas":
-    opcoes_menu = ["📊 Dashboard & Analytics", "⚡ Nova Venda Direta", "📑 Acompanhamento de Propostas", "👀 Follow-up"]
+    opcoes_menu = ["📊 Dashboard & Analytics", "⚡ Nova Venda Direta", "💼 Gestão de Vendas & Propostas", "📑 Acompanhamento de Propostas", "👀 Follow-up"]
 
 menu = st.sidebar.radio("Navegação:", opcoes_menu)
 
@@ -381,7 +381,7 @@ elif menu == "🛎️ Nova Solicitação (Reservas)":
 # 2.1 Nova Venda Direta
 elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
     st.header("⚡ Nova Venda / Proposta Direta (Time de Vendas)")
-    st.info("Utilize esta tela quando a solicitação e a precificação forem feitas diretamente por você.")
+    st.info("Utilize esta tela para registrar e precificar diretamente. O lead irá para Gestão de Vendas para acompanhamento.")
 
     if st.button("🧹 Limpar / Novo Formulário"):
         st.session_state["form_version"] += 1
@@ -418,7 +418,7 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
         novo_status = st.radio("Status Inicial:", ["Cotação enviada", "Confirmado"], horizontal=True, key=f"venda_status_{v}")
         novo_deadline = st.date_input("Deadline para Resposta", value=date.today(), key=f"venda_dead_{v}")
         
-        if st.button("🚀 Salvar Venda Direta e Gerar Proposta", type="primary"):
+        if st.button("🚀 Salvar Venda Direta", type="primary"):
             if empresa == "":
                 st.error("O nome da Empresa é obrigatório.")
             elif total_quartos < 10:
@@ -437,35 +437,11 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
                 ]
                 aba_vendas_diretas.append_row(nova_linha)
                 
-                tabela_html = f"<h4>Discriminação da Hospedagem (Com ISS 5%):</h4>"
-                tabela_html += f"<table><tr><th>Acomodação</th><th>Qtd / RN</th><th>Valor Unit. NET</th><th>Subtotal (com ISS 5%)</th></tr>"
-                if rn_s > 0 and t_single > 0: tabela_html += f"<tr><td>Diária Single</td><td>{rn_s}</td><td>R$ {t_single:.2f}</td><td>R$ {(rn_s * t_single * 1.05):.2f}</td></tr>"
-                if rn_d > 0 and t_duplo > 0: tabela_html += f"<tr><td>Diária Dupla</td><td>{rn_d}</td><td>R$ {t_duplo:.2f}</td><td>R$ {(rn_d * t_duplo * 1.05):.2f}</td></tr>"
-                if rn_t > 0 and t_triplo > 0: tabela_html += f"<tr><td>Diária Tripla</td><td>{rn_t}</td><td>R$ {t_triplo:.2f}</td><td>R$ {(rn_t * t_triplo * 1.05):.2f}</td></tr>"
-                tabela_html += "</table>"
-                
-                id_prop = f"PROP-{id_unico}"
-                link_rastreavel = f"{URL_WEB_APP}?id={id_prop}&nome={empresa.replace(' ', '%20')}"
-                valor_total_formatado = f"{receita_total:,.2f}"
-                data_hj = datetime.now().strftime("%d/%m/%Y")
-                
-                u_cargo = str(st.session_state.get("cargo", "Gerente de Vendas"))
-                u_email = str(st.session_state.get("email_user", "catarina.costa@accor.com"))
-                u_tel = str(st.session_state.get("tel_user", "(11) 5085-5699"))
-
-                aba_propostas.append_row([
-                    str(id_prop), str(empresa), str(email), str(tabela_html), 
-                    str(valor_total_formatado), str(novo_status), "", str(data_hj), "",
-                    str(usuario_atual), str(u_cargo), str(u_email), str(u_tel), str(link_rastreavel)
-                ])
-
-                st.success("✅ Venda Direta registrada e proposta gerada com sucesso! Acesse o Follow-up para acompanhar.")
-                st.markdown("### 🔗 Link Inteligente para Envio:")
-                st.code(link_rastreavel)
+                st.success("✅ Venda Direta salva com sucesso! O lead já está disponível na Gestão de Vendas para tratativa.")
                 st.cache_resource.clear()
                 st.cache_data.clear()
 
-# 3. Gestão de Vendas & Proposta (Apenas para leads que vieram de Reservas)
+# 3. Gestão de Vendas & Proposta (Aparecem os dados preenchidos anteriormente para tratativa)
 elif menu == "💼 Gestão de Vendas & Propostas":
     st.header("💼 Tratativa, Precificação e Envio de Proposta")
     if perfil.lower() not in ["vendas", "gerencial"]:
@@ -474,24 +450,23 @@ elif menu == "💼 Gestão de Vendas & Propostas":
         if df.empty:
             st.warning("Nenhum grupo cadastrado.")
         else:
-            # Filtra apenas os pendentes E que sejam originados da equipe de reservas
-            df_pendentes = df[(df['Origem_Fluxo'] == 'Equipe de Reservas') & (~df['Status_Clean'].isin(['confirmado', 'recusado']))]
+            df_pendentes = df[~df['Status_Clean'].isin(['confirmado', 'recusado'])]
             
             if df_pendentes.empty:
-                st.success("Nenhum grupo pendente da equipe de reservas no momento!")
+                st.success("Nenhum grupo pendente no momento!")
             else:
                 if st.button("🧹 Limpar / Novo Formulário"):
                     st.session_state["form_version"] += 1
                     st.rerun()
 
                 v = st.session_state["form_version"]
-                opcoes = df_pendentes['ID'].astype(str) + " - " + df_pendentes['Empresa'] + " (" + df_pendentes['Status'] + ")"
+                opcoes = df_pendentes['ID'].astype(str) + " - " + df_pendentes['Empresa'] + " (" + df_pendentes['Origem_Fluxo'] + ")"
                 grupo_sel = st.selectbox("Escolha o Grupo para tratar:", opcoes, key=f"sel_grupo_tratar_{v}")
                 id_sel = grupo_sel.split(" - ")[0]
                 linha_atual = df_pendentes[df_pendentes['ID'] == id_sel].iloc[0]
                 
                 st.markdown("---")
-                st.markdown("### 📋 Detalhes da Solicitação")
+                st.markdown("### 📋 Detalhes da Solicitação / Dados Anteriores")
                 dc1, dc2, dc3 = st.columns(3)
                 with dc1:
                     st.write(f"**Empresa:** {linha_atual['Empresa']}")
@@ -502,6 +477,8 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                 with dc3:
                     st.write(f"**Período:** {linha_atual['Check-in']} até {linha_atual['Check-out']}")
                     st.write(f"**Origem:** {linha_atual.get('Origem_Fluxo', 'Reservas')}")
+
+                st.write(f"**Quartos Solicitados:** Single: {linha_atual['Total RN Single']} | Duplo: {linha_atual['Total RN Duplo']} | Triplo: {linha_atual['Total RN Triplo']}")
                 st.markdown("---")
 
                 rn_s = int(linha_atual['Total RN Single'] or 0)
@@ -519,7 +496,12 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                 with c3:
                     if rn_t > 0: t_triplo = st.number_input("Tarifa Triplo (R$)", value=float(linha_atual.get('Tarifa Triplo', 0.0) or 0.0), key=f"val_t_triplo_{v}")
                 
-                novo_status = st.radio("Status:", ["Cotação enviada", "Confirmado", "Recusado"], horizontal=True, key=f"radio_status_comercial_{v}")
+                status_atual_grupo = str(linha_atual.get('Status', 'Cotação enviada'))
+                idx_default = 0
+                if "Confirmado" in status_atual_grupo: idx_default = 1
+                elif "Recusado" in status_atual_grupo: idx_default = 2
+
+                novo_status = st.radio("Status:", ["Cotação enviada", "Confirmado", "Recusado"], index=idx_default, horizontal=True, key=f"radio_status_comercial_{v}")
                 novo_deadline = st.date_input("Deadline", value=date.today(), key=f"input_deadline_comercial_{v}")
                 
                 motivo_recusa_input = ""
@@ -530,7 +512,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     receita_hospedagem = (rn_s * t_single) + (rn_d * t_duplo) + (rn_t * t_triplo)
                     receita_total = float(receita_hospedagem * 1.05)
                     
-                    alvo_aba = aba_dados
+                    alvo_aba = aba_vendas_diretas if str(id_sel).startswith("V-") else aba_dados
                     dados_alvo = alvo_aba.get_all_values()
                     linha_planilha = -1
                     for idx_l, row_l in enumerate(dados_alvo[1:], start=2):
