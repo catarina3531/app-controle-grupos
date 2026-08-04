@@ -94,7 +94,6 @@ try:
             if 'Criado_Por' not in df_unificado.columns:
                 df_unificado['Criado_Por'] = 'Sistema'
                 
-            # Tratamento de colunas numéricas para evitar erros de conversão
             cols_numericas = ['Total RN Single', 'Total RN Duplo', 'Total RN Triplo', 'Tarifa Single', 'Tarifa Duplo', 'Tarifa Triplo', 'Receita Total']
             for col in cols_numericas:
                 if col in df_unificado.columns:
@@ -214,7 +213,7 @@ if perfil.lower() == "gerencial":
 elif perfil.lower() == "hotel":
     opcoes_menu = ["🛎️ Nova Solicitação (Reservas)", "👀 Follow-up"]
 elif perfil.lower() == "vendas":
-    opcoes_menu = ["📊 Dashboard & Analytics", "⚡ Nova Venda Direta", "💼 Gestão de Vendas & Propostas", "📑 Acompanhamento de Propostas", "👀 Follow-up"]
+    opcoes_menu = ["📊 Dashboard & Analytics", "⚡ Nova Venda Direta", "📑 Acompanhamento de Propostas", "👀 Follow-up"]
 
 menu = st.sidebar.radio("Navegação:", opcoes_menu)
 
@@ -460,13 +459,13 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
                     str(usuario_atual), str(u_cargo), str(u_email), str(u_tel), str(link_rastreavel)
                 ])
 
-                st.success("✅ Venda Direta registrada e proposta gerada com sucesso!")
+                st.success("✅ Venda Direta registrada e proposta gerada com sucesso! Acesse o Follow-up para acompanhar.")
                 st.markdown("### 🔗 Link Inteligente para Envio:")
                 st.code(link_rastreavel)
                 st.cache_resource.clear()
                 st.cache_data.clear()
 
-# 3. Gestão de Vendas & Proposta
+# 3. Gestão de Vendas & Proposta (Apenas para leads que vieram de Reservas)
 elif menu == "💼 Gestão de Vendas & Propostas":
     st.header("💼 Tratativa, Precificação e Envio de Proposta")
     if perfil.lower() not in ["vendas", "gerencial"]:
@@ -475,17 +474,18 @@ elif menu == "💼 Gestão de Vendas & Propostas":
         if df.empty:
             st.warning("Nenhum grupo cadastrado.")
         else:
-            df_pendentes = df[~df['Status_Clean'].isin(['confirmado', 'recusado'])]
+            # Filtra apenas os pendentes E que sejam originados da equipe de reservas
+            df_pendentes = df[(df['Origem_Fluxo'] == 'Equipe de Reservas') & (~df['Status_Clean'].isin(['confirmado', 'recusado']))]
             
             if df_pendentes.empty:
-                st.success("Nenhum grupo pendente no momento!")
+                st.success("Nenhum grupo pendente da equipe de reservas no momento!")
             else:
                 if st.button("🧹 Limpar / Novo Formulário"):
                     st.session_state["form_version"] += 1
                     st.rerun()
 
                 v = st.session_state["form_version"]
-                opcoes = df_pendentes['ID'].astype(str) + " - " + df_pendentes['Empresa'] + " (" + df_pendentes['Origem_Fluxo'] + ")"
+                opcoes = df_pendentes['ID'].astype(str) + " - " + df_pendentes['Empresa'] + " (" + df_pendentes['Status'] + ")"
                 grupo_sel = st.selectbox("Escolha o Grupo para tratar:", opcoes, key=f"sel_grupo_tratar_{v}")
                 id_sel = grupo_sel.split(" - ")[0]
                 linha_atual = df_pendentes[df_pendentes['ID'] == id_sel].iloc[0]
@@ -530,7 +530,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     receita_hospedagem = (rn_s * t_single) + (rn_d * t_duplo) + (rn_t * t_triplo)
                     receita_total = float(receita_hospedagem * 1.05)
                     
-                    alvo_aba = aba_vendas_diretas if str(id_sel).startswith("V-") else aba_dados
+                    alvo_aba = aba_dados
                     dados_alvo = alvo_aba.get_all_values()
                     linha_planilha = -1
                     for idx_l, row_l in enumerate(dados_alvo[1:], start=2):
