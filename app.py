@@ -439,6 +439,19 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
                             receita_extras += sub
                             tabela_html += f"<tr><td>{nome}</td><td>{qtd}</td><td>R$ {val:.2f}</td><td>R$ {sub:.2f}</td></tr>"
                     tabela_html += "</table>"
+
+                # >>> ADICIONANDO AS CONDIÇÕES GERAIS E POLÍTICAS À PROPOSTA <<<
+                tabela_html += """
+                <br>
+                <h4>Políticas e Condições Gerais</h4>
+                <p style="font-size: 14px; text-align: justify; line-height: 1.5;">
+                <b>1. Horários:</b> O Check-in inicia a partir das 14h00 e o Check-out deve ser realizado até as 12h00.<br>
+                <b>2. Política de Pagamento:</b> O método de pagamento (Faturamento sujeito à aprovação ou Pagamento Antecipado) deve ser alinhado e formalizado com o setor de Vendas/Reservas.<br>
+                <b>3. Política de Cancelamento e No-Show:</b> Cancelamentos ou reduções de bloqueio estão sujeitos às regras estipuladas em contrato. Em caso de não comparecimento (No-Show), haverá a cobrança integral da primeira diária.<br>
+                <b>4. Validade da Proposta:</b> Tarifas e disponibilidade estão sujeitas a alterações sem aviso prévio até a assinatura oficial do contrato.<br>
+                <b>5. Impostos e Taxas:</b> As tarifas de hospedagem discriminadas acima já contemplam o imposto ISS (5%). A Taxa de Turismo é opcional e não está inclusa no valor.
+                </p>
+                """
                 
                 receita_total = float((receita_hospedagem * 1.05) + receita_extras)
                 id_unico = "V-" + datetime.now().strftime("%Y%m%d%H%M")
@@ -598,6 +611,19 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                                 receita_extras += sub
                                 tabela_html += f"<tr><td>{nome}</td><td>{qtd}</td><td>R$ {val:.2f}</td><td>R$ {sub:.2f}</td></tr>"
                         tabela_html += "</table>"
+
+                    # >>> ADICIONANDO AS CONDIÇÕES GERAIS E POLÍTICAS À PROPOSTA <<<
+                    tabela_html += """
+                    <br>
+                    <h4>Políticas e Condições Gerais</h4>
+                    <p style="font-size: 14px; text-align: justify; line-height: 1.5;">
+                    <b>1. Horários:</b> O Check-in inicia a partir das 14h00 e o Check-out deve ser realizado até as 12h00.<br>
+                    <b>2. Política de Pagamento:</b> O método de pagamento (Faturamento sujeito à aprovação ou Pagamento Antecipado) deve ser alinhado e formalizado com o setor de Vendas/Reservas.<br>
+                    <b>3. Política de Cancelamento e No-Show:</b> Cancelamentos ou reduções de bloqueio estão sujeitos às regras estipuladas em contrato. Em caso de não comparecimento (No-Show), haverá a cobrança integral da primeira diária.<br>
+                    <b>4. Validade da Proposta:</b> Tarifas e disponibilidade estão sujeitas a alterações sem aviso prévio até a assinatura oficial do contrato.<br>
+                    <b>5. Impostos e Taxas:</b> As tarifas de hospedagem discriminadas acima já contemplam o imposto ISS (5%). A Taxa de Turismo é opcional e não está inclusa no valor.
+                    </p>
+                    """
                     
                     receita_total = float((receita_hospedagem * 1.05) + receita_extras)
                     
@@ -652,7 +678,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     st.session_state["form_version"] += 1
                     st.rerun()
 
-# 4. Acompanhamento de Propostas (A ÚNICA PARTE QUE FOI ALTERADA)
+# 4. Acompanhamento de Propostas
 elif menu == "📑 Acompanhamento de Propostas":
     st.header("📑 Acompanhamento e Reenvio de Propostas")
     if df_propostas.empty:
@@ -682,9 +708,6 @@ elif menu == "📑 Acompanhamento de Propostas":
             elif 'Link Proposta' in colunas_reais: link_proposta = row['Link Proposta']
             elif len(row) > 13: link_proposta = row.iloc[13]
 
-            # -------------------------------------------------------------
-            # Extração de Novos Dados (E-mail, Data, Observação e Produtos)
-            # -------------------------------------------------------------
             email_cliente = row['Email'] if 'Email' in colunas_reais else row.iloc[2] if len(row) > 2 else ''
             
             data_criacao = ''
@@ -698,19 +721,16 @@ elif menu == "📑 Acompanhamento de Propostas":
             if 'Produtos_Contratados' in colunas_reais: produtos_contratados = row['Produtos_Contratados']
             elif 'Produtos Contratados' in colunas_reais: produtos_contratados = row['Produtos Contratados']
             elif len(row) > 3: produtos_contratados = row.iloc[3]
-            # -------------------------------------------------------------
 
             if pd.isna(val_tot) or str(val_tot).strip() == '': val_tot = '0.00'
             if pd.isna(criado_por) or str(criado_por).strip() == '': criado_por = 'Usuário não identificado'
             if pd.isna(link_proposta): link_proposta = ''
 
-            # Correção de segurança para não misturar link e usuário
             if str(criado_por).startswith("http"):
                 link_temp = criado_por
                 criado_por = link_proposta
                 link_proposta = link_temp
 
-            # Construção da visualização (Expander)
             with st.expander(f"📌 {cliente_p} (ID: {id_p}) - Status: **{status_p}**"):
                 st.write(f"**Empresa/Cliente:** {cliente_p} | **E-mail:** {email_cliente}")
                 st.write(f"**Data de Criação:** {data_criacao}")
@@ -722,14 +742,12 @@ elif menu == "📑 Acompanhamento de Propostas":
                 st.markdown("---")
                 st.markdown("##### 📄 Resumo da Proposta")
                 if produtos_contratados and str(produtos_contratados).strip():
-                    # Renderiza o HTML das tabelas geradas no passo anterior
                     st.markdown(produtos_contratados, unsafe_allow_html=True)
                 else:
                     st.info("Nenhum detalhe de produto registrado.")
 
                 st.markdown("---")
                 st.markdown("##### 🔗 Link da Proposta")
-                # Mostra o link
                 if str(link_proposta).startswith("http"):
                     st.code(link_proposta)
                 else:
