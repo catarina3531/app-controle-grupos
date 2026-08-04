@@ -810,7 +810,88 @@ elif menu == "👀 Follow-up":
             st.dataframe(df_conf[['Check-in', 'Check-out', 'Empresa', 'Receita Total', 'Status']], use_container_width=True)
 
 # 6. Gerenciar Usuários
-elif menu == "⚙️ Gerenciar Usuários" and perfil.lower() == "gerencial":
-    st.header("⚙️ Painel de Controle de Usuários")
-    colunas_publicas = [c for c in df_usuarios.columns if c.lower() != 'senha']
-    st.dataframe(df_usuarios[colunas_publicas], use_container_width=True)
+elif menu == "⚙️ Gerenciar Usuários":
+    if perfil.lower() != "gerencial":
+        st.error("🔒 Acesso Restrito! Apenas perfis gerenciais podem gerenciar usuários.")
+    else:
+        st.header("⚙️ Painel de Controle de Usuários")
+        
+        tab_lista, tab_novo, tab_editar = st.tabs(["👥 Lista de Usuários", "➕ Adicionar Novo Usuário", "✏️ Editar / Remover Usuário"])
+        
+        with tab_lista:
+            st.subheader("Usuários Cadastrados no Sistema")
+            colunas_publicas = [c for c in df_usuarios.columns if c.lower() != 'senha']
+            st.dataframe(df_usuarios[colunas_publicas], use_container_width=True)
+            
+        with tab_novo:
+            st.subheader("Cadastrar Novo Usuário")
+            with st.form("form_novo_usuario"):
+                novo_nome = st.text_input("Nome de Usuário / Login")
+                nova_senha = st.text_input("Senha Inicial", type="password", value="mudar@123")
+                novo_perfil = st.selectbox("Perfil de Acesso", ["Hotel", "Vendas", "Gerencial"])
+                primeiro_acesso_opt = st.selectbox("Exigir Troca de Senha no 1º Acesso?", ["Sim", "Não"])
+                novo_cargo = st.text_input("Cargo / Função", value="Analista de Distribuição e Reservas")
+                novo_email = st.text_input("E-mail", value="accor@accor.com")
+                novo_tel = st.text_input("Telefone", value="(11) 5085-5699")
+                
+                btn_cadastrar = st.form_submit_button("💾 Salvar Novo Usuário", type="primary")
+                if btn_cadastrar:
+                    if not novo_nome.strip():
+                        st.error("O nome de usuário é obrigatório.")
+                    else:
+                        usuarios_atuais_lista = aba_usuarios.col_values(1)
+                        if novo_nome in usuarios_atuais_lista:
+                            st.error("Este nome de usuário já existe!")
+                        else:
+                            aba_usuarios.append_row([novo_nome, nova_senha, novo_perfil, primeiro_acesso_opt, novo_cargo, novo_email, novo_tel])
+                            st.success(f"✅ Usuário '{novo_nome}' cadastrado com sucesso!")
+                            st.cache_resource.clear()
+                            st.cache_data.clear()
+                            st.rerun()
+
+        with tab_editar:
+            st.subheader("Editar Senha, Perfil ou Remover Usuário")
+            lista_usrs_ed = df_usuarios['usuario'].dropna().tolist()
+            if not lista_usrs_ed:
+                st.info("Nenhum usuário para gerenciar.")
+            else:
+                usr_selecionado = st.selectbox("Selecione o Usuário:", lista_usrs_ed)
+                linha_usr_df = df_usuarios[df_usuarios['usuario'] == usr_selecionado].iloc[0]
+                idx_planilha_usr = df_usuarios[df_usuarios['usuario'] == usr_selecionado].index[0] + 2
+                
+                with st.form("form_edicao_usuario"):
+                    ed_senha = st.text_input("Nova Senha (deixe em branco para manter a atual)", type="password")
+                    ed_perfil = st.selectbox("Perfil", ["Hotel", "Vendas", "Gerencial"], index=["Hotel", "Vendas", "Gerencial"].index(linha_usr_df['perfil']) if linha_usr_df['perfil'] in ["Hotel", "Vendas", "Gerencial"] else 0)
+                    ed_pri_acesso = st.selectbox("Exigir Troca de Senha?", ["Sim", "Não"], index=0 if str(linha_usr_df.get('primeiro acesso', 'Sim')) == "Sim" else 1)
+                    ed_cargo = st.text_input("Cargo", value=str(linha_usr_df.get('cargo', '')))
+                    ed_email = st.text_input("E-mail", value=str(linha_usr_df.get('email', '')))
+                    ed_tel = st.text_input("Telefone", value=str(linha_usr_df.get('telefone', '')))
+                    
+                    c_btn1, c_btn2 = st.columns(2)
+                    with c_btn1:
+                        btn_salvar_alt = st.form_submit_button("💾 Salvar Alterações", type="primary")
+                    with c_btn2:
+                        btn_remover = st.form_submit_button("🗑️ Remover Usuário")
+                        
+                    if btn_salvar_alt:
+                        if ed_senha.strip():
+                            aba_usuarios.update_cell(idx_planilha_usr, 2, ed_senha.strip())
+                        aba_usuarios.update_cell(idx_planilha_usr, 3, ed_perfil)
+                        aba_usuarios.update_cell(idx_planilha_usr, 4, ed_pri_acesso)
+                        aba_usuarios.update_cell(idx_planilha_usr, 5, ed_cargo)
+                        aba_usuarios.update_cell(idx_planilha_usr, 6, ed_email)
+                        aba_usuarios.update_cell(idx_planilha_usr, 7, ed_tel)
+                        st.success(f"✅ Alterações salvas para o usuário '{usr_selecionado}'!")
+                        st.cache_resource.clear()
+                        st.cache_data.clear()
+                        st.rerun()
+                        
+                    if btn_remover:
+                        if usr_selecionado == usuario_atual:
+                            st.error("⚠️ Você não pode remover seu próprio usuário logado ativamente.")
+                        else:
+                            aba_usuarios.delete_rows(idx_planilha_usr)
+                            st.success(f"🗑️ Usuário '{usr_selecionado}' removido com sucesso!")
+                            st.cache_resource.clear()
+                            st.cache_data.clear()
+                            st.rerun()
