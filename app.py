@@ -477,16 +477,21 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                 rn_d = int(linha_atual['Total RN Duplo'] or 0)
                 rn_t = int(linha_atual['Total RN Triplo'] or 0)
                 
+                # Puxa automaticamente as tarifas já cadastradas (seja da venda direta ou edição anterior)
+                tarifa_single_salva = float(linha_atual.get('Tarifa Single', 0.0) or 0.0)
+                tarifa_duplo_salva = float(linha_atual.get('Tarifa Duplo', 0.0) or 0.0)
+                tarifa_triplo_salva = float(linha_atual.get('Tarifa Triplo', 0.0) or 0.0)
+
                 st.subheader("1. Tarifas de Hospedagem (NET)")
                 c1, c2, c3 = st.columns(3)
                 t_single, t_duplo, t_triplo = 0.0, 0.0, 0.0
                 
                 with c1:
-                    if rn_s > 0: t_single = st.number_input("Tarifa Single (R$)", value=float(linha_atual.get('Tarifa Single', 0.0) or 0.0), key=f"val_t_single_{v}")
+                    if rn_s > 0: t_single = st.number_input("Tarifa Single (R$)", value=tarifa_single_salva, key=f"val_t_single_{v}")
                 with c2:
-                    if rn_d > 0: t_duplo = st.number_input("Tarifa Duplo (R$)", value=float(linha_atual.get('Tarifa Duplo', 0.0) or 0.0), key=f"val_t_duplo_{v}")
+                    if rn_d > 0: t_duplo = st.number_input("Tarifa Duplo (R$)", value=tarifa_duplo_salva, key=f"val_t_duplo_{v}")
                 with c3:
-                    if rn_t > 0: t_triplo = st.number_input("Tarifa Triplo (R$)", value=float(linha_atual.get('Tarifa Triplo', 0.0) or 0.0), key=f"val_t_triplo_{v}")
+                    if rn_t > 0: t_triplo = st.number_input("Tarifa Triplo (R$)", value=tarifa_triplo_salva, key=f"val_t_triplo_{v}")
                 
                 novo_status = st.radio("Status:", ["Cotação enviada", "Confirmado", "Recusado"], horizontal=True, key=f"radio_status_comercial_{v}")
                 novo_deadline = st.date_input("Deadline", value=date.today(), key=f"input_deadline_comercial_{v}")
@@ -546,7 +551,6 @@ elif menu == "💼 Gestão de Vendas & Propostas":
 
                     propostas_atuais = aba_propostas.get_all_values()
                     
-                    # Procura se a proposta já existe na aba Propostas
                     idx_proposta_existente = -1
                     for idx_p, p_row in enumerate(propostas_atuais[1:], start=2):
                         if p_row[0] == id_prop:
@@ -560,10 +564,8 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     ]
 
                     if idx_proposta_existente != -1:
-                        # Atualiza exatamente a linha existente usando update a partir da coluna A
                         aba_propostas.update(f'A{idx_proposta_existente}:N{idx_proposta_existente}', [nova_linha_proposta])
                     else:
-                        # Adiciona uma nova linha no final da aba Propostas
                         aba_propostas.append_row(nova_linha_proposta)
                     
                     st.success(f"✅ Proposta gerada/atualizada com sucesso! Status: {novo_status}")
