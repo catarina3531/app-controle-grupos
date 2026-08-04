@@ -263,7 +263,7 @@ if menu == "📊 Dashboard & Analytics":
 
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Total Leads / Solicitações", len(df_dash))
-        col2.metric("Propostas Enviadas", len(df_dash[df_dash['Status_Clean'].str.contains("cotação enviada", case=False, na=False)]))
+        col2.metric("Propostas Enviadas", len(df_dash[df_dash['Status_Clean'].str.contains("cotação enviada|enviado", case=False, na=False)]))
         col3.metric("Confirmados", len(df_dash[df_dash['Status_Clean'].str.contains("confirmado", case=False, na=False)]))
         col4.metric("Recusados", len(df_dash[df_dash['Status_Clean'].str.contains("recusado", case=False, na=False)]))
 
@@ -497,6 +497,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
         if df.empty:
             st.warning("Nenhum grupo cadastrado.")
         else:
+            # Inclui "Em Ajuste / Solicitação" para que o grupo volte para tratativa e edição de quartos
             df_pendentes = df[~df['Status_Clean'].isin(['confirmado', 'recusado'])]
             
             if df_pendentes.empty:
@@ -507,7 +508,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     st.rerun()
 
                 v = st.session_state["form_version"]
-                opcoes = df_pendentes['ID'].astype(str) + " - " + df_pendentes['Empresa'] + " (" + df_pendentes['Origem_Fluxo'] + ")"
+                opcoes = df_pendentes['ID'].astype(str) + " - " + df_pendentes['Empresa'] + " (" + df_pendentes['Origem_Fluxo'] + " - Status: " + df_pendentes['Status'] + ")"
                 grupo_sel = st.selectbox("Escolha o Grupo para tratar:", opcoes, key=f"sel_grupo_tratar_{v}")
                 id_sel = grupo_sel.split(" - ")[0]
                 linha_atual = df_pendentes[df_pendentes['ID'] == id_sel].iloc[0]
@@ -526,11 +527,42 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     st.write(f"**Origem:** {linha_atual.get('Origem_Fluxo', 'Reservas')}")
                 st.markdown("---")
 
-                rn_s = int(linha_atual['Total RN Single'] or 0)
-                rn_d = int(linha_atual['Total RN Duplo'] or 0)
-                rn_t = int(linha_atual['Total RN Triplo'] or 0)
+                # Se o cliente pediu ajuste, exibe o comentário dele na tela
+                propostas_atuais_l = aba_propostas.get_all_values()
+                id_prop_buscado = f"PROP-{id_sel}"
+                obs_ajuste_cliente = ""
+                for p_r in propostas_atuais_l[1:]:
+                    if p_r[0] == id_prop_buscado and len(p_r) > 6 and p_r[6]:
+                        obs_ajuste_cliente = p_r[6]
+                        break
 
-                st.write(f"**Quantidades solicitadas no período:** Single: {rn_s} | Duplo: {rn_d} | Triplo: {rn_t}")
+                if obs_ajuste_cliente:
+                    st.warning(f"💬 **Solicitação de Ajuste do Cliente:** {obs_ajuste_cliente}")
+
+                # Permite atualizar as quantidades/quartos na nova tratativa
+                mapa_quartos_salvo = linha_atual.get('Mapa de Quartos', '')
+                checkin_dt = datetime.strptime(linha_atual['Check-in'], '%d/%m/%Y').date()
+                checkout_dt = datetime.strptime(linha_atual['Check-out'], '%d/%m/%Y').date()
+                dias_bloco = (checkout_dt - checkin_dt).days
+
+                st.markdown("### 🛏️ Atualizar Quantidade de Acomodações por Dia (se necessário)")
+                if mapa_quartos_salvo and str(mapa_quartos_salvo).startswith("["):
+                    try:
+                        df_grid_inicial = pd.read_json(mapa_quartos_salvo)
+                    except:
+                        datas_l = [checkin_dt + timedelta(days=i) for i in range(dias_bloco)]
+                        df_grid_inicial = pd.DataFrame({"Data": [d.strftime("%d/%m/%Y") for d in datas_l], "Single": [0]*dias_bloco, "Duplo": [0]*dias_bloco, "Triplo": [0]*dias_bloco})
+                else:
+                    datas_l = [checkin_dt + timedelta(days=i) for i in range(dias_bloco)]
+                    df_grid_inicial = pd.DataFrame({"Data": [d.strftime("%d/%m/%Y") for d in datas_l], "Single": [0]*dias_bloco, "Duplo": [0]*dias_bloco, "Triplo": [0]*dias_bloco})
+
+                df_editado_gestao = st.data_editor(df_grid_inicial, hide_index=True, use_container_width=True, key=f"g_grid_quartos_{v}")
+                
+                rn_s = int(df_editado_gestao["Single"].sum())
+                rn_d = int(df_editado_gestao["Duplo"].sum())
+                rn_t = int(df_editado_gestao["Triplo"].sum())
+
+                st.write(f"**Totais recalculados no período:** Single: {rn_s} | Duplo: {rn_d} | Triplo: {rn_t}")
                 
                 tarifa_single_salva = float(linha_atual.get('Tarifa Single', 0.0) or 0.0)
                 tarifa_duplo_salva = float(linha_atual.get('Tarifa Duplo', 0.0) or 0.0)
@@ -621,6 +653,9 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                             break
                             
                     if linha_planilha != -1:
+                        alvo_aba.update_cell(linha_planilha, 9, rn_s)
+                        alvo_aba.update_cell(linha_planilha, 10, rn_d)
+                        alvo_aba.update_cell(linha_planilha, 11, rn_t)
                         alvo_aba.update_cell(linha_planilha, 12, t_single)
                         alvo_aba.update_cell(linha_planilha, 13, t_duplo)
                         alvo_aba.update_cell(linha_planilha, 14, t_triplo)
@@ -628,6 +663,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         alvo_aba.update_cell(linha_planilha, 16, novo_status)
                         alvo_aba.update_cell(linha_planilha, 17, novo_deadline.strftime("%d/%m/%Y") if novo_status != "Recusado" else "")
                         alvo_aba.update_cell(linha_planilha, 18, motivo_recusa_input)
+                        alvo_aba.update_cell(linha_planilha, 19, df_editado_gestao.to_json(orient='records'))
                     
                     id_prop = f"PROP-{id_sel}"
                     data_hj = datetime.now().strftime("%d/%m/%Y")
@@ -748,9 +784,15 @@ elif menu == "👀 Follow-up":
         st.warning("Nenhum dado cadastrado.")
     else:
         t1, t2, t3 = st.tabs(["⚠️ Sem Tratativa", "⏳ Cotações em Aberto", "✅ Confirmados"])
-        with t1: st.dataframe(df[df['Status_Clean'].str.contains("enviado", na=False)][['Data Envio', 'Empresa', 'Origem_Fluxo']], use_container_width=True)
-        with t2: st.dataframe(df[df['Status_Clean'].str.contains("cotação enviada", case=False, na=False)][['Empresa', 'Deadline', 'Receita Total']], use_container_width=True)
-        with t3: st.dataframe(df[df['Status_Clean'].str.contains("confirmado", case=False, na=False)][['Check-in', 'Check-out', 'Empresa', 'Receita Total']], use_container_width=True)
+        with t1: 
+            df_sem_tratativa = df[df['Status_Clean'].str.contains("enviado|solicitação", case=False, na=False)]
+            st.dataframe(df_sem_tratativa[['Data Envio', 'Empresa', 'Origem_Fluxo', 'Status']], use_container_width=True)
+        with t2: 
+            df_cotacoes = df[df['Status_Clean'].str.contains("cotação enviada|em ajuste", case=False, na=False)]
+            st.dataframe(df_cotacoes[['Empresa', 'Deadline', 'Receita Total', 'Status']], use_container_width=True)
+        with t3: 
+            df_conf = df[df['Status_Clean'].str.contains("confirmado|aceita", case=False, na=False)]
+            st.dataframe(df_conf[['Check-in', 'Check-out', 'Empresa', 'Receita Total', 'Status']], use_container_width=True)
 
 # 6. Gerenciar Usuários
 elif menu == "⚙️ Gerenciar Usuários" and perfil.lower() == "gerencial":
