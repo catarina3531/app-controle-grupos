@@ -10,6 +10,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, Tabl
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 import io
+import urllib.parse
 
 st.set_page_config(page_title="CRM Grupos & Propostas", page_icon="🏨", layout="wide")
 
@@ -85,39 +86,27 @@ def calcular_dias_uteis(data_inicio, data_fim):
     dias = pd.bdate_range(start=data_inicio, end=data_fim)
     return len(dias) - 1 if len(dias) > 0 else 0
 
-def gerar_pdf_relatorio(df_dados, total_leads, prop_env, confirmados, recusados):
+def gerar_pdf_relatorio(df_dados, total_leads, prop_env, confirmados, recusados, win_rate, meta_rev, receita_conf):
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
     elementos = []
     
     styles = getSampleStyleSheet()
-    titulo_estilo = ParagraphStyle(
-        'TituloRelatorio',
-        parent=styles['Heading1'],
-        fontSize=18,
-        textColor=colors.HexColor('#00703c'),
-        spaceAfter=15,
-        alignment=1
-    )
-    
-    sub_estilo = ParagraphStyle(
-        'SubRelatorio',
-        parent=styles['Heading2'],
-        fontSize=12,
-        textColor=colors.HexColor('#333333'),
-        spaceAfter=10
-    )
+    titulo_estilo = ParagraphStyle('TituloRelatorio', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor('#00703c'), spaceAfter=15, alignment=1)
+    sub_estilo = ParagraphStyle('SubRelatorio', parent=styles['Heading2'], fontSize=12, textColor=colors.HexColor('#333333'), spaceAfter=10)
     
     elementos.append(Paragraph("Relatório Executivo de Performance - CRM Grupos", titulo_estilo))
     elementos.append(Paragraph(f"Data de Emissão: {datetime.now().strftime('%d/%m/%Y %H:%M')}", sub_estilo))
     elementos.append(Spacer(1, 10))
     
     dados_tabela = [
-        ["Métrica", "Quantidade"],
+        ["Métrica", "Valor / Quantidade"],
         ["Total de Leads / Solicitações", str(total_leads)],
         ["Propostas Enviadas", str(prop_env)],
         ["Confirmados", str(confirmados)],
-        ["Recusados", str(recusados)]
+        ["Recusados", str(recusados)],
+        ["Taxa de Conversão (Win Rate)", f"{win_rate:.1f}%"],
+        ["Receita Confirmada vs Meta", f"R$ {receita_conf:,.2f} / R$ {meta_rev:,.2f}"]
     ]
     
     t = Table(dados_tabela, colWidths=[300, 150])
@@ -172,6 +161,36 @@ def gerar_pdf_relatorio(df_dados, total_leads, prop_env, confirmados, recusados)
     buffer.seek(0)
     return buffer.getvalue()
 
+def gerar_pdf_proposta_individual(row_prop):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=letter, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
+    elementos = []
+    
+    styles = getSampleStyleSheet()
+    titulo = ParagraphStyle('PropTitulo', parent=styles['Heading1'], fontSize=16, textColor=colors.HexColor('#00703c'), spaceAfter=10, alignment=1)
+    sub = ParagraphStyle('PropSub', parent=styles['Heading2'], fontSize=11, textColor=colors.HexColor('#333333'), spaceAfter=15)
+    corpo = ParagraphStyle('PropCorpo', parent=styles['Normal'], fontSize=10, textColor=colors.HexColor('#222222'), spaceAfter=8)
+    
+    cliente = row_prop.get('Cliente', 'Cliente')
+    id_p = row_prop.get('ID_Proposta', '')
+    data_c = row_prop.get('Data_Criacao', '')
+    val_tot = row_prop.get('Valor_Total', '0.00')
+    criado = row_prop.get('Nome_Usuario', '')
+    
+    elementos.append(Paragraph(f"PROPOSTA COMERCIAL - {cliente}", titulo))
+    elementos.append(Paragraph(f"<b>ID da Proposta:</b> {id_p} | <b>Data:</b> {data_c} | <b>Consultor(a):</b> {criado}", sub))
+    elementos.append(Spacer(1, 10))
+    elementos.append(Paragraph("<b>Resumo dos Serviços e Valores Contratados:</b>", corpo))
+    
+    produtos_html = str(row_prop.get('Produtos_Contratados', ''))
+    elementos.append(Paragraph(produtos_html.replace('<table>', '<table width="100%">').replace('<th>', '<th bgcolor="#f2f2f2">'), corpo))
+    elementos.append(Spacer(1, 15))
+    elementos.append(Paragraph(f"<b>Valor Total da Proposta: R$ {val_tot}</b>", ParagraphStyle('TotalSt', parent=corpo, fontSize=12, textColor=colors.HexColor('#00703c'))))
+    
+    doc.build(elementos)
+    buffer.seek(0)
+    return buffer.getvalue()
+
 @st.cache_resource(ttl=300) 
 def conectar_planilhas():
     credenciais = dict(st.secrets["gcp_service_account"])
@@ -195,10 +214,16 @@ def conectar_planilhas():
         aba_propostas = planilha.add_worksheet(title="Propostas", rows=100, cols=14)
         aba_propostas.append_row(['ID_Proposta', 'Cliente', 'Email', 'Produtos_Contratados', 'Valor_Total', 'Status', 'Observacoes', 'Data_Criacao', 'Ultimo_Acesso', 'Nome_Usuario', 'Cargo_Usuario', 'Email_Usuario', 'Tel_Usuario', 'Link_Proposta'])
 
-    return aba_dados, aba_vendas_diretas, aba_usuarios, aba_propostas
+    try:
+        aba_timeline = planilha.worksheet("Timeline")
+    except:
+        aba_timeline = planilha.add_worksheet(title="Timeline", rows=100, cols=5)
+        aba_timeline.append_row(['ID_Grupo', 'Data_Hora', 'Usuario', 'Tipo', 'Nota'])
+
+    return aba_dados, aba_vendas_diretas, aba_usuarios, aba_propostas, aba_timeline
 
 try:
-    aba_dados, aba_vendas_diretas, aba_usuarios, aba_propostas = conectar_planilhas()
+    aba_dados, aba_vendas_diretas, aba_usuarios, aba_propostas, aba_timeline = conectar_planilhas()
     
     @st.cache_data(ttl=60)
     def carregar_dados_gerais():
@@ -281,7 +306,15 @@ try:
     def carregar_usuarios_cache():
         return aba_usuarios.get_all_values()
 
+    @st.cache_data(ttl=60)
+    def carregar_timeline_cache():
+        vals = aba_timeline.get_all_values()
+        if not vals or len(vals) <= 1:
+            return pd.DataFrame(columns=['ID_Grupo', 'Data_Hora', 'Usuario', 'Tipo', 'Nota'])
+        return pd.DataFrame(vals[1:], columns=[h.strip() for h in vals[0]])
+
     df = carregar_dados_gerais()
+    df_timeline = carregar_timeline_cache()
             
     propostas_valores = carregar_propostas_cache()
     if len(propostas_valores) > 1:
@@ -392,7 +425,6 @@ menu = st.sidebar.radio("Navegação:", opcoes_menu)
 if menu == "📊 Dashboard & Analytics":
     st.header("📊 Dashboard Executivo & Performance por Usuário")
     
-    # --- BLOCO DE ALERTAS INTELIGENTES ---
     if not df.empty:
         hoje = pd.to_datetime(date.today())
         
@@ -431,8 +463,6 @@ if menu == "📊 Dashboard & Analytics":
         
         st.sidebar.markdown("---")
         st.sidebar.subheader("🔍 Filtros Avançados")
-        
-        # 1. Filtro de Data
         tipo_filtro_data = st.sidebar.radio("Filtrar por Período:", ["Data de Solicitação", "Mês de Competência (Check-in)"])
         
         if tipo_filtro_data == "Data de Solicitação":
@@ -444,7 +474,6 @@ if menu == "📊 Dashboard & Analytics":
             mes_sel = st.sidebar.selectbox("Selecione a Competência (Check-in):", ["Todos"] + meses_disp)
             df_dash = df[df['Mês/Ano Competência (Check-in)'].astype(str) == mes_sel] if mes_sel != "Todos" else df
 
-        # 2. Filtro de Usuário
         if 'Criado_Por' in df_dash.columns:
             usuarios_disp = sorted(df_dash['Criado_Por'].dropna().unique().tolist())
             usuario_sel = st.sidebar.selectbox("Filtrar por Usuário (Responsável):", ["Todos"] + usuarios_disp)
@@ -455,16 +484,29 @@ if menu == "📊 Dashboard & Analytics":
         prop_e = len(df_dash[df_dash['Status_Clean'].str.contains("cotação enviada", case=False, na=False)])
         conf_e = len(df_dash[df_dash['Status_Clean'].str.contains("confirmado", case=False, na=False)])
         rec_e = len(df_dash[df_dash['Status_Clean'].str.contains("recusado", case=False, na=False)])
+        
+        # Win Rate (Taxa de Conversão %)
+        total_tratados = conf_e + rec_e
+        win_rate = (conf_e / total_tratados * 100) if total_tratados > 0 else 0.0
 
-        # Cards Superiores
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total Leads / Solicitações", total_l)
+        col1, col2, col3, col4, col5 = st.columns(5)
+        col1.metric("Total Leads", total_l)
         col2.metric("Propostas Enviadas", prop_e)
         col3.metric("Confirmados", conf_e)
         col4.metric("Recusados", rec_e)
+        col5.metric("Win Rate (%)", f"{win_rate:.1f}%")
+
+        st.markdown("---")
+        st.subheader("🎯 Comparativo Realizado vs. Meta de Receita")
+        meta_mensal = st.number_input("Definir Meta de Receita do Mês (R$):", min_value=0.0, value=100000.0, step=5000.0, key="input_meta_receita")
+        receita_confirmada_total = df_dash[df_dash['Status_Clean'].str.contains("confirmado", case=False, na=False)]['Receita Total'].sum()
+        
+        progresso_meta = (receita_confirmada_total / meta_mensal * 100) if meta_mensal > 0 else 0
+        st.progress(min(progresso_meta / 100.0, 1.0))
+        st.write(f"**Realizado Confirmado:** R$ {receita_confirmada_total:,.2f} / **Meta:** R$ {meta_mensal:,.2f} ({progresso_meta:.1f}% atingido)")
 
         st.markdown("<br>", unsafe_allow_html=True)
-        pdf_bytes = gerar_pdf_relatorio(df_dash, total_l, prop_e, conf_e, rec_e)
+        pdf_bytes = gerar_pdf_relatorio(df_dash, total_l, prop_e, conf_e, rec_e, win_rate, meta_mensal, receita_confirmada_total)
         st.download_button(
             label="📄 Baixar Relatório Executivo em PDF",
             data=pdf_bytes,
@@ -476,7 +518,6 @@ if menu == "📊 Dashboard & Analytics":
         st.markdown("---")
         st.subheader("📈 Análise de Tendências e Performance")
         
-        # LINHA 1 DE GRÁFICOS: Evolução e Usuários
         c_trend1, c_trend2 = st.columns(2)
         with c_trend1:
             st.markdown("#### Evolução Mensal (Volume de Leads)")
@@ -503,7 +544,6 @@ if menu == "📊 Dashboard & Analytics":
         st.markdown("---")
         st.subheader("📊 Distribuição e Funil")
         
-        # LINHA 2 DE GRÁFICOS: Origem e Funil de Status
         c_g1, c_g2 = st.columns(2)
         with c_g1:
             st.markdown("#### Origem (Reservas x Vendas Diretas)")
@@ -531,17 +571,31 @@ if menu == "📊 Dashboard & Analytics":
                 st.altair_chart(chart_status, use_container_width=True)
 
         st.markdown("---")
-        st.subheader("💰 Análise Financeira por Status")
-        
-        # LINHA 3 DE GRÁFICOS: Receita Projetada
-        if not df_dash.empty and 'Receita Total' in df_dash.columns:
-            df_receita = df_dash.groupby('Status')['Receita Total'].sum().reset_index()
-            chart_receita = alt.Chart(df_receita).mark_bar(color='#2196F3').encode(
-                x=alt.X('Receita Total:Q', title='Volume Financeiro Projetado (R$)'),
-                y=alt.Y('Status:N', sort='-x', title='Status do Grupo'),
-                tooltip=[alt.Tooltip('Status'), alt.Tooltip('Receita Total:Q', format='$,.2f')]
-            ).properties(height=300)
-            st.altair_chart(chart_receita, use_container_width=True)
+        st.subheader("🚨 Análise de Motivos de Perda (Loss Analysis)")
+        c_loss1, c_loss2 = st.columns(2)
+        with c_loss1:
+            df_recusados = df_dash[df_dash['Status_Clean'].str.contains("recusado", case=False, na=False)].copy()
+            if not df_recusados.empty:
+                motivo_counts = df_recusados['Motivo Recusa'].value_counts().reset_index()
+                motivo_counts.columns = ['Motivo', 'Total']
+                chart_recusa = alt.Chart(motivo_counts).mark_arc(innerRadius=40).encode(
+                    theta=alt.Theta(field="Total", type="quantitative"),
+                    color=alt.Color(field="Motivo", type="nominal"),
+                    tooltip=['Motivo', 'Total']
+                ).properties(height=300)
+                st.altair_chart(chart_recusa, use_container_width=True)
+            else:
+                st.info("Nenhum registro de recusa no filtro atual.")
+        with c_loss2:
+            st.markdown("#### Receita Projetada por Status")
+            if not df_dash.empty and 'Receita Total' in df_dash.columns:
+                df_receita = df_dash.groupby('Status')['Receita Total'].sum().reset_index()
+                chart_receita = alt.Chart(df_receita).mark_bar(color='#2196F3').encode(
+                    x=alt.X('Receita Total:Q', title='Volume Financeiro (R$)'),
+                    y=alt.Y('Status:N', sort='-x', title='Status'),
+                    tooltip=[alt.Tooltip('Status'), alt.Tooltip('Receita Total:Q', format='$,.2f')]
+                ).properties(height=300)
+                st.altair_chart(chart_receita, use_container_width=True)
 
 # 2. Nova Solicitação (Reservas)
 elif menu == "🛎️ Nova Solicitação (Reservas)":
@@ -582,6 +636,10 @@ elif menu == "🛎️ Nova Solicitação (Reservas)":
                     0, 0, 0, 0, "Enviado para time de vendas", "", "", df_editado.to_json(orient='records'), usuario_atual
                 ]
                 aba_dados.append_row(nova_linha)
+                
+                # Registrar Timeline Inicial
+                aba_timeline.append_row([id_unico, datetime.now().strftime("%d/%m/%Y %H:%M"), usuario_atual, "Criação", "Solicitação criada pela equipe de reservas."])
+
                 st.success("✅ Solicitação enviada com sucesso!")
                 st.cache_resource.clear()
                 st.cache_data.clear()
@@ -640,7 +698,6 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
                 tipos_t_sel = st.multiselect("Tipologias Triplo:", options=obter_tipologias_compativeis("Triplo"), key=f"v_tipo_t_{v}")
 
         st.markdown("### 🍽️ 2. Produtos e Serviços Extras")
-        st.write("Adicione refeições, maleiro, diárias de salas, etc.")
         df_extras_inicial = pd.DataFrame([{"Produto/Serviço": "", "Qtd": 0, "Valor Unitário (R$)": 0.0} for _ in range(3)])
         df_extras = st.data_editor(df_extras_inicial, num_rows="dynamic", hide_index=True, key=f"v_extras_{v}", use_container_width=True)
 
@@ -714,6 +771,7 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
                     novo_status, novo_deadline.strftime("%d/%m/%Y") if novo_status != "Recusado" else "", motivo_recusa_input, df_editado.to_json(orient='records'), usuario_atual
                 ]
                 aba_vendas_diretas.append_row(nova_linha)
+                aba_timeline.append_row([id_unico, datetime.now().strftime("%d/%m/%Y %H:%M"), usuario_atual, "Venda Direta", f"Criada venda direta com status: {novo_status}"])
                 
                 id_prop = f"PROP-{id_unico}"
                 data_hj = datetime.now().strftime("%d/%m/%Y")
@@ -807,11 +865,24 @@ elif menu == "💼 Gestão de Vendas & Propostas":
 
                     if obs_ajuste_cliente:
                         st.warning(f"💬 **Histórico / Solicitação de Ajuste do Cliente:** {obs_ajuste_cliente}")
-                        with st.expander("🔍 Ver como estava a solicitação / valores anteriores"):
-                            st.write(f"**Total RN Single anterior:** {linha_atual['Total RN Single']}")
-                            st.write(f"**Total RN Duplo anterior:** {linha_atual['Total RN Duplo']}")
-                            st.write(f"**Total RN Triplo anterior:** {linha_atual['Total RN Triplo']}")
-                            st.write(f"**Tarifas anteriores:** Single: R$ {linha_atual.get('Tarifa Single', 0)} | Duplo: R$ {linha_atual.get('Tarifa Duplo', 0)} | Triplo: R$ {linha_atual.get('Tarifa Triplo', 0)}")
+
+                    # --- HISTÓRICO DE FOLLOW-UP (TIMELINE) ---
+                    st.markdown("### ⏱️ Histórico de Follow-up (Timeline)")
+                    df_tl_grupo = df_timeline[df_timeline['ID_Grupo'] == id_sel]
+                    if not df_tl_grupo.empty:
+                        for _, row_tl in df_tl_grupo.iterrows():
+                            st.caption(f"📅 **{row_tl['Data_Hora']}** | 👤 *{row_tl['Usuario']}* | **[{row_tl['Tipo']}]**: {row_tl['Nota']}")
+                    else:
+                        st.info("Nenhuma nota registrada nesta timeline.")
+
+                    with st.form(key=f"form_nova_nota_{v}"):
+                        nova_nota = st.text_input("Adicionar nova nota de atendimento / ligação:")
+                        btn_salvar_nota = st.form_submit_button("Adicionar Nota na Timeline")
+                        if btn_salvar_nota and nova_nota.strip():
+                            aba_timeline.append_row([id_sel, datetime.now().strftime("%d/%m/%Y %H:%M"), usuario_atual, "Contato", nova_nota.strip()])
+                            st.success("Nota adicionada!")
+                            st.cache_data.clear()
+                            st.rerun()
 
                     mapa_quartos_salvo = linha_atual.get('Mapa de Quartos', '')
                     checkin_dt = datetime.strptime(linha_atual['Check-in'], '%d/%m/%Y').date()
@@ -869,7 +940,6 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                             tipos_t_sel = st.multiselect("Tipologias Triplo:", options=obter_tipologias_compativeis("Triplo"), key=f"g_tipo_t_{v}")
 
                     st.markdown("### 🍽️ 2. Produtos e Serviços Extras")
-                    st.write("Adicione refeições, maleiro, diárias de salas, etc.")
                     df_extras_inicial = pd.DataFrame([{"Produto/Serviço": "", "Qtd": 0, "Valor Unitário (R$)": 0.0} for _ in range(3)])
                     df_extras = st.data_editor(df_extras_inicial, num_rows="dynamic", hide_index=True, key=f"g_extras_{v}", use_container_width=True)
 
@@ -967,9 +1037,15 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                                 idx_proposta_existente = idx_p
                                 break
                         
+                        # --- VERSIONAMENTO DE PROPOSTA ---
+                        obs_versao = ""
+                        if idx_proposta_existente != -1:
+                            valor_antigo = propostas_atuais[idx_proposta_existente-1][4]
+                            obs_versao = f"Revisão gerada em {data_hj}. Valor anterior: R$ {valor_antigo} para R$ {receita_total:,.2f}"
+
                         nova_linha_proposta = [
                             str(id_prop), str(linha_atual['Empresa']), str(linha_atual['E-mail']), str(tabela_html), 
-                            f"{receita_total:,.2f}", str(novo_status), "", str(data_hj), "",
+                            f"{receita_total:,.2f}", str(novo_status), str(obs_versao), str(data_hj), "",
                             str(u_logado), str(u_cargo), str(u_email), str(u_tel), str(link_rastreavel)
                         ]
 
@@ -978,6 +1054,8 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                         else:
                             aba_propostas.append_row(nova_linha_proposta)
                         
+                        aba_timeline.append_row([id_sel, datetime.now().strftime("%d/%m/%Y %H:%M"), usuario_atual, "Proposta", f"Proposta atualizada/enviada. Status: {novo_status}. Valor: R$ {receita_total:,.2f}"])
+
                         st.success(f"✅ Proposta atualizada e salva com sucesso! Status: {novo_status}")
                         if novo_status != "Recusado":
                             st.code(link_rastreavel)
@@ -1015,6 +1093,7 @@ elif menu == "📑 Acompanhamento de Propostas":
             elif len(row) > 13: link_proposta = row.iloc[13]
 
             email_cliente = row['Email'] if 'Email' in colunas_reais else row.iloc[2] if len(row) > 2 else ''
+            tel_cliente = row.get('Tel_Usuario', '(11) 99999-9999')
             
             data_criacao = ''
             if 'Data_Criacao' in colunas_reais: data_criacao = row['Data_Criacao']
@@ -1043,7 +1122,7 @@ elif menu == "📑 Acompanhamento de Propostas":
                 st.write(f"**Valor Total:** R$ {val_tot} | **Criado por:** {criado_por}")
                 
                 if obs and str(obs).strip():
-                    st.write(f"**Observações internas:** {obs}")
+                    st.write(f"💬 **Histórico / Versões:** {obs}")
 
                 st.markdown("---")
                 st.markdown("##### 📄 Resumo da Proposta")
@@ -1053,15 +1132,27 @@ elif menu == "📑 Acompanhamento de Propostas":
                     st.info("Nenhum detalhe de produto registrado.")
 
                 st.markdown("---")
-                st.markdown("##### 🔗 Link da Proposta")
+                st.markdown("##### 🔗 Links e Ações Rápidas")
                 if str(link_proposta).startswith("http"):
                     st.code(link_proposta)
+                    
+                    # --- BOTÃO WHATSAPP ---
+                    msg_whatsapp = f"Olá, {cliente_p}! Segue a proposta comercial atualizada do hotel para o seu evento: {link_proposta}"
+                    msg_encoded = urllib.parse.quote(msg_whatsapp)
+                    url_whats = f"https://wa.me/?text={msg_encoded}"
+                    st.markdown(f'<a href="{url_whats}" target="_blank"><button style="background-color:#25D366; color:white; padding:8px 16px; border:none; border-radius:5px; font-weight:bold; cursor:pointer;">📲 Enviar por WhatsApp</button></a>', unsafe_allow_html=True)
+                    
+                    # --- BOTÃO DOWNLOAD PDF DA PROPOSTA ---
+                    pdf_prop_bytes = gerar_pdf_proposta_individual(row)
+                    st.download_button(
+                        label="📄 Baixar Proposta em PDF (Anexo)",
+                        data=pdf_prop_bytes,
+                        file_name=f"Proposta_{cliente_p.replace(' ', '_')}_{id_p}.pdf",
+                        mime="application/pdf",
+                        key=f"dl_pdf_{id_p}"
+                    )
                 else:
-                    possiveis_links = [str(x) for x in row.values if str(x).startswith("http")]
-                    if possiveis_links:
-                        st.code(possiveis_links[0])
-                    else:
-                        st.info("Link ainda não gerado para esta proposta.")
+                    st.info("Link ainda não gerado para esta proposta.")
 
 # 5. Follow-up
 elif menu == "👀 Follow-up":
