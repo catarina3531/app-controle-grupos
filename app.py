@@ -184,27 +184,23 @@ def gerar_pdf_proposta_individual(row_prop):
     
     produtos_html = str(row_prop.get('Produtos_Contratados', ''))
     
-    # Extração limpa e conversão para tabela nativa do ReportLab
+    # Processador robusto de tags HTML para o ReportLab
     linhas_tabela = [["Descrição / Acomodação", "Qtd / RN", "Valor Unit.", "Subtotal"]]
     
-    if "<tr>" in produtos_html:
-        tr_list = produtos_html.split("<tr>")[1:]
-        for tr in tr_list:
-            td_list = tr.split("<td>")
-            if len(td_list) >= 5:
-                acombo = td_list[1].replace("</td>", "").strip()
-                tipologia = td_list[2].replace("</td>", "").strip()
-                qtd = td_list[3].replace("</td>", "").strip()
-                val_u = td_list[4].replace("</td>", "").strip()
-                subt = td_list[5].replace("</td>", "").replace("</tr>", "").strip()
-                desc_completa = f"{acombo}\n({tipologia})" if tipologia and "Conforme" not in tipologia else acombo
-                linhas_tabela.append([desc_completa, qtd, val_u, subt])
-            elif len(td_list) >= 4:
-                serv = td_list[1].replace("</td>", "").strip()
-                qtd = td_list[2].replace("</td>", "").strip()
-                val_u = td_list[3].replace("</td>", "").strip()
-                subt = td_list[4].replace("</td>", "").replace("</tr>", "").strip()
-                linhas_tabela.append([serv, qtd, val_u, subt])
+    # Limpa tags desnecessárias e quebra as linhas da tabela HTML salva
+    blocos_tr = produtos_html.split("<tr>")
+    for tr in blocos_tr:
+        if "<td>" in tr:
+            celulas = []
+            blocos_td = tr.split("<td>")
+            for td in blocos_td[1:]:
+                limpo = td.split("</td>")[0].replace("<h4>", "").replace("</h4>", "").strip()
+                if limpo:
+                    celulas.append(limpo)
+            if len(celulas) >= 4:
+                linhas_tabela.append([celulas[0] + (f"\n({celulas[1]})" if len(celulas) > 4 and "Conforme" not in celulas[1] else ""), celulas[-3], celulas[-2], celulas[-1]])
+            elif len(celulas) == 4:
+                linhas_tabela.append(celulas)
 
     if len(linhas_tabela) > 1:
         t_prop = Table(linhas_tabela, colWidths=[230, 70, 100, 100])
@@ -222,7 +218,8 @@ def gerar_pdf_proposta_individual(row_prop):
         ]))
         elementos.append(t_prop)
     else:
-        elementos.append(Paragraph(produtos_html, corpo))
+        # Fallback de segurança caso a string venha em formato diferente
+        elementos.append(Paragraph("Acomodações e serviços contratados conforme negociação comercial.", corpo))
 
     elementos.append(Spacer(1, 15))
     elementos.append(Paragraph(f"<b>Valor Total da Proposta: R$ {val_tot}</b>", ParagraphStyle('TotalSt', parent=corpo, fontSize=12, textColor=colors.HexColor('#00703c'))))
@@ -986,7 +983,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     if novo_status != "Recusado":
                         novo_deadline = st.date_input("Deadline", value=date.today() + timedelta(days=10), key=f"input_deadline_comercial_{v}")
                     
-                    motivos_recusa_lista = ["Preço", "Evento cancelado", "Categoria du Hotel", "Política de Pagamento", "Condições de Cancelamento", "Configuração dos Quartos", "Localização", "Sem retorno do cliente", "Outros"]
+                    motivos_recusa_lista = ["Preço", "Evento cancelado", "Categoria do Hotel", "Política de Pagamento", "Condições de Cancelamento", "Configuração dos Quartos", "Localização", "Sem retorno do cliente", "Outros"]
                     motivo_recusa_input = ""
                     if novo_status == "Recusado":
                         motivo_recusa_input = st.selectbox("Motivo da Recusa:", motivos_recusa_lista, key=f"sel_motivo_{v}")
