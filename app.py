@@ -66,7 +66,6 @@ try:
     
     @st.cache_data(ttl=60)
     def carregar_dados_gerais():
-        # Carrega da aba Dados (Reservas)
         todos_dados = aba_dados.get_all_values()
         if not todos_dados or len(todos_dados) <= 1:
             df_d = pd.DataFrame()
@@ -75,7 +74,6 @@ try:
             df_d = pd.DataFrame(todos_dados[1:], columns=h_d)
             df_d['Origem_Fluxo'] = 'Equipe de Reservas'
             
-        # Carrega da aba Vendas_Diretas
         todos_vendas = aba_vendas_diretas.get_all_values()
         if not todos_vendas or len(todos_vendas) <= 1:
             df_v = pd.DataFrame()
@@ -95,6 +93,13 @@ try:
                 df_unificado['Motivo Recusa'] = 'Não informado'
             if 'Criado_Por' not in df_unificado.columns:
                 df_unificado['Criado_Por'] = 'Sistema'
+                
+            # Tratamento de colunas numéricas para evitar erros de conversão
+            cols_numericas = ['Total RN Single', 'Total RN Duplo', 'Total RN Triplo', 'Tarifa Single', 'Tarifa Duplo', 'Tarifa Triplo', 'Receita Total']
+            for col in cols_numericas:
+                if col in df_unificado.columns:
+                    df_unificado[col] = pd.to_numeric(df_unificado[col].astype(str).str.replace('R$', '').str.replace('.', '').str.replace(',', '.'), errors='coerce').fillna(0)
+                    
         return df_unificado
 
     @st.cache_data(ttl=60)
@@ -223,7 +228,6 @@ if menu == "📊 Dashboard & Analytics":
     if df.empty:
         st.info("Nenhum dado cadastrado.")
     else:
-        # Tratamento de Datas para Filtros
         df['Data_Envio_Dt'] = pd.to_datetime(df['Data Envio'], format='%d/%m/%Y', errors='coerce')
         df['Checkin_Dt'] = pd.to_datetime(df['Check-in'], format='%d/%m/%Y', errors='coerce')
         
@@ -241,7 +245,7 @@ if menu == "📊 Dashboard & Analytics":
         else:
             meses_disp = sorted(df['Mês/Ano Competência (Check-in)'].dropna().unique().tolist(), reverse=True)
             mes_sel = st.sidebar.selectbox("Selecione a Competência (Check-in):", ["Todos"] + meses_disp)
-            df_dash = df[df['Mês/Ano Competência (Check-in)'] == mes_sel] if mes_sel != "Todos" else df
+            df_dash = df[df['Mês/Ano Competência (Check-in)'].astype(str) == mes_sel] if mes_sel != "Todos" else df
 
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Total Leads / Solicitações", len(df_dash))
@@ -278,19 +282,15 @@ if menu == "📊 Dashboard & Analytics":
         st.markdown("---")
         st.subheader("👥 Relatório de Atividade por Usuário (Solicitações, Propostas & Conversões)")
         
-        # Consolidação por usuário responsável
         if not df_dash.empty:
-            # Agrupa solicitações criadas pelo usuário
             solic_por_usuario = df_dash.groupby('Criado_Por').size().reset_index(name='Total Solicitações')
             conf_por_usuario = df_dash[df_dash['Status_Clean'].str.contains("confirmado", case=False, na=False)].groupby('Criado_Por').size().reset_index(name='Confirmados')
             
-            # Agrupa propostas geradas pelo usuário vendedor
             if not df_propostas.empty and 'Nome_Usuario' in df_propostas.columns:
                 prop_por_usuario = df_propostas.groupby('Nome_Usuario').size().reset_index(name='Propostas Enviadas')
             else:
                 prop_por_usuario = pd.DataFrame(columns=['Nome_Usuario', 'Propostas Enviadas'])
                 
-            # Merge das tabelas de atividade
             tabela_usuarios = pd.merge(solic_por_usuario, prop_por_usuario, left_on='Criado_Por', right_on='Nome_Usuario', how='outer').fillna(0)
             if 'Nome_Usuario' in tabela_usuarios.columns:
                 tabela_usuarios = tabela_usuarios.drop(columns=['Nome_Usuario'])
@@ -379,7 +379,7 @@ elif menu == "🛎️ Nova Solicitação (Reservas)":
                 st.session_state["form_version"] += 1
                 st.rerun()
 
-# 2.1 Nova Venda Direta (Apenas para perfil de Vendas)
+# 2.1 Nova Venda Direta
 elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
     st.header("⚡ Nova Venda / Proposta Direta (Time de Vendas)")
     st.info("Utilize esta tela quando a solicitação e a precificação forem feitas diretamente por você.")
@@ -426,7 +426,7 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
                 st.error(f"⚠️ Total de apartamentos solicitados é {total_quartos}. Mínimo de 10 aptos.")
             else:
                 receita_hospedagem = (rn_s * t_single) + (rn_d * t_duplo) + (rn_t * t_triplo)
-                receita_total = float(receita_hospedagem * 1.05) # Com ISS 5%
+                receita_total = float(receita_hospedagem * 1.05)
                 
                 id_unico = "V-" + datetime.now().strftime("%Y%m%d%H%M")
                 
@@ -438,7 +438,6 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
                 ]
                 aba_vendas_diretas.append_row(nova_linha)
                 
-                # Gera HTML da Proposta
                 tabela_html = f"<h4>Discriminação da Hospedagem (Com ISS 5%):</h4>"
                 tabela_html += f"<table><tr><th>Acomodação</th><th>Qtd / RN</th><th>Valor Unit. NET</th><th>Subtotal (com ISS 5%)</th></tr>"
                 if rn_s > 0 and t_single > 0: tabela_html += f"<tr><td>Diária Single</td><td>{rn_s}</td><td>R$ {t_single:.2f}</td><td>R$ {(rn_s * t_single * 1.05):.2f}</td></tr>"
@@ -467,7 +466,7 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
                 st.cache_resource.clear()
                 st.cache_data.clear()
 
-# 3. Gestão de Vendas & Proposta (Fila de pendentes de ambas as origens)
+# 3. Gestão de Vendas & Proposta
 elif menu == "💼 Gestão de Vendas & Propostas":
     st.header("💼 Tratativa, Precificação e Envio de Proposta")
     if perfil.lower() not in ["vendas", "gerencial"]:
@@ -514,11 +513,11 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                 t_single, t_duplo, t_triplo = 0.0, 0.0, 0.0
                 
                 with c1:
-                    if rn_s > 0: t_single = st.number_input("Tarifa Single (R$)", value=float(linha_atual.get('Tarifa Single', 0) or 0), key=f"val_t_single_{v}")
+                    if rn_s > 0: t_single = st.number_input("Tarifa Single (R$)", value=float(linha_atual.get('Tarifa Single', 0.0) or 0.0), key=f"val_t_single_{v}")
                 with c2:
-                    if rn_d > 0: t_duplo = st.number_input("Tarifa Duplo (R$)", value=float(linha_atual.get('Tarifa Duplo', 0) or 0), key=f"val_t_duplo_{v}")
+                    if rn_d > 0: t_duplo = st.number_input("Tarifa Duplo (R$)", value=float(linha_atual.get('Tarifa Duplo', 0.0) or 0.0), key=f"val_t_duplo_{v}")
                 with c3:
-                    if rn_t > 0: t_triplo = st.number_input("Tarifa Triplo (R$)", value=float(linha_atual.get('Tarifa Triplo', 0) or 0), key=f"val_t_triplo_{v}")
+                    if rn_t > 0: t_triplo = st.number_input("Tarifa Triplo (R$)", value=float(linha_atual.get('Tarifa Triplo', 0.0) or 0.0), key=f"val_t_triplo_{v}")
                 
                 novo_status = st.radio("Status:", ["Cotação enviada", "Confirmado", "Recusado"], horizontal=True, key=f"radio_status_comercial_{v}")
                 novo_deadline = st.date_input("Deadline", value=date.today(), key=f"input_deadline_comercial_{v}")
@@ -531,7 +530,6 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     receita_hospedagem = (rn_s * t_single) + (rn_d * t_duplo) + (rn_t * t_triplo)
                     receita_total = float(receita_hospedagem * 1.05)
                     
-                    # Identifica qual aba atualizar com base no ID
                     alvo_aba = aba_vendas_diretas if str(id_sel).startswith("V-") else aba_dados
                     dados_alvo = alvo_aba.get_all_values()
                     linha_planilha = -1
