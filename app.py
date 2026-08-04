@@ -116,7 +116,7 @@ try:
         header_prop = [h.strip() for h in propostas_valores[0]]
         df_propostas = pd.DataFrame(propostas_valores[1:], columns=header_prop)
     else:
-        df_propostas = pd.DataFrame(columns=['ID_Proposta', 'Cliente', 'Email', 'Produtos_Contratados', 'Valor_Total', 'Status', 'Observacoes', 'Data_Criacao', 'Ultimo_Acesso', 'Link_Proposta', 'Nome_Usuario'])
+        df_propostas = pd.DataFrame(columns=['ID_Proposta', 'Cliente', 'Email', 'Produtos_Contratados', 'Valor_Total', 'Status', 'Observacoes', 'Data_Criacao', 'Ultimo_Acesso', 'Link_Proposta', 'Nome_Usuario', 'Cargo_Usuario', 'Email_Usuario', 'Tel_Usuario'])
 
     todos_valores_user = carregar_usuarios_cache()
     if len(todos_valores_user) <= 1:
@@ -435,7 +435,7 @@ elif menu == "⚡ Nova Venda Direta" and perfil.lower() == "vendas":
                 st.cache_resource.clear()
                 st.cache_data.clear()
 
-# 3. Gestão de Vendas & Proposta (Com a nova opção "Sem retorno do cliente")
+# 3. Gestão de Vendas & Proposta
 elif menu == "💼 Gestão de Vendas & Propostas":
     st.header("💼 Tratativa, Precificação e Envio de Proposta")
     if perfil.lower() not in ["vendas", "gerencial"]:
@@ -545,23 +545,26 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     valor_total_formatado = f"{receita_total:,.2f}"
 
                     propostas_atuais = aba_propostas.get_all_values()
-                    achou = False
+                    
+                    # Procura se a proposta já existe na aba Propostas
+                    idx_proposta_existente = -1
                     for idx_p, p_row in enumerate(propostas_atuais[1:], start=2):
                         if p_row[0] == id_prop:
-                            aba_propostas.update(f'A{idx_p}:N{idx_p}', [[
-                                str(id_prop), str(linha_atual['Empresa']), str(linha_atual['E-mail']), str(tabela_html), 
-                                str(valor_total_formatado), str(novo_status), "", str(data_hj), "",
-                                str(u_logado), str(u_cargo), str(u_email), str(u_tel), str(link_rastreavel)
-                            ]])
-                            achou = True
+                            idx_proposta_existente = idx_p
                             break
                     
-                    if not achou:
-                        aba_propostas.append_row([
-                            str(id_prop), str(linha_atual['Empresa']), str(linha_atual['E-mail']), str(tabela_html), 
-                            str(valor_total_formatado), str(novo_status), "", str(data_hj), "",
-                            str(u_logado), str(u_cargo), str(u_email), str(u_tel), str(link_rastreavel)
-                        ])
+                    nova_linha_proposta = [
+                        str(id_prop), str(linha_atual['Empresa']), str(linha_atual['E-mail']), str(tabela_html), 
+                        str(valor_total_formatado), str(novo_status), "", str(data_hj), "",
+                        str(u_logado), str(u_cargo), str(u_email), str(u_tel), str(link_rastreavel)
+                    ]
+
+                    if idx_proposta_existente != -1:
+                        # Atualiza exatamente a linha existente usando update a partir da coluna A
+                        aba_propostas.update(f'A{idx_proposta_existente}:N{idx_proposta_existente}', [nova_linha_proposta])
+                    else:
+                        # Adiciona uma nova linha no final da aba Propostas
+                        aba_propostas.append_row(nova_linha_proposta)
                     
                     st.success(f"✅ Proposta gerada/atualizada com sucesso! Status: {novo_status}")
                     st.code(link_rastreavel)
