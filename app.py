@@ -168,8 +168,8 @@ def gerar_pdf_proposta_individual(row_prop):
     
     styles = getSampleStyleSheet()
     titulo = ParagraphStyle('PropTitulo', parent=styles['Heading1'], fontSize=16, textColor=colors.HexColor('#00703c'), spaceAfter=10, alignment=1)
-    sub = ParagraphStyle('PropSub', parent=styles['Heading2'], fontSize=11, textColor=colors.HexColor('#333333'), spaceAfter=15)
-    corpo = ParagraphStyle('PropCorpo', parent=styles['Normal'], fontSize=10, textColor=colors.HexColor('#222222'), spaceAfter=8)
+    sub = ParagraphStyle('PropSub', parent=styles['Heading2'], fontSize=10, textColor=colors.HexColor('#333333'), spaceAfter=15)
+    corpo = ParagraphStyle('PropCorpo', parent=styles['Normal'], fontSize=9, textColor=colors.HexColor('#222222'), spaceAfter=6)
     
     cliente = row_prop.get('Cliente', 'Cliente')
     id_p = row_prop.get('ID_Proposta', '')
@@ -178,12 +178,52 @@ def gerar_pdf_proposta_individual(row_prop):
     criado = row_prop.get('Nome_Usuario', '')
     
     elementos.append(Paragraph(f"PROPOSTA COMERCIAL - {cliente}", titulo))
-    elementos.append(Paragraph(f"<b>ID da Proposta:</b> {id_p} | <b>Data:</b> {data_c} | <b>Consultor(a):</b> {criado}", sub))
+    elementos.append(Paragraph(f"<b>ID da Proposta:</b> {id_p} &nbsp;|&nbsp; <b>Data:</b> {data_c} &nbsp;|&nbsp; <b>Consultor(a):</b> {criado}", sub))
     elementos.append(Spacer(1, 10))
-    elementos.append(Paragraph("<b>Resumo dos Serviços e Valores Contratados:</b>", corpo))
+    elementos.append(Paragraph("<b>Detalhamento da Proposta e Serviços:</b>", corpo))
     
     produtos_html = str(row_prop.get('Produtos_Contratados', ''))
-    elementos.append(Paragraph(produtos_html.replace('<table>', '<table width="100%">').replace('<th>', '<th bgcolor="#f2f2f2">'), corpo))
+    
+    # Extração limpa e conversão para tabela nativa do ReportLab
+    linhas_tabela = [["Descrição / Acomodação", "Qtd / RN", "Valor Unit.", "Subtotal"]]
+    
+    if "<tr>" in produtos_html:
+        tr_list = produtos_html.split("<tr>")[1:]
+        for tr in tr_list:
+            td_list = tr.split("<td>")
+            if len(td_list) >= 5:
+                acombo = td_list[1].replace("</td>", "").strip()
+                tipologia = td_list[2].replace("</td>", "").strip()
+                qtd = td_list[3].replace("</td>", "").strip()
+                val_u = td_list[4].replace("</td>", "").strip()
+                subt = td_list[5].replace("</td>", "").replace("</tr>", "").strip()
+                desc_completa = f"{acombo}\n({tipologia})" if tipologia and "Conforme" not in tipologia else acombo
+                linhas_tabela.append([desc_completa, qtd, val_u, subt])
+            elif len(td_list) >= 4:
+                serv = td_list[1].replace("</td>", "").strip()
+                qtd = td_list[2].replace("</td>", "").strip()
+                val_u = td_list[3].replace("</td>", "").strip()
+                subt = td_list[4].replace("</td>", "").replace("</tr>", "").strip()
+                linhas_tabela.append([serv, qtd, val_u, subt])
+
+    if len(linhas_tabela) > 1:
+        t_prop = Table(linhas_tabela, colWidths=[230, 70, 100, 100])
+        t_prop.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#00703c')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('ALIGN', (0, 1), (0, -1), 'LEFT'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#dddddd')),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#fafafa')),
+        ]))
+        elementos.append(t_prop)
+    else:
+        elementos.append(Paragraph(produtos_html, corpo))
+
     elementos.append(Spacer(1, 15))
     elementos.append(Paragraph(f"<b>Valor Total da Proposta: R$ {val_tot}</b>", ParagraphStyle('TotalSt', parent=corpo, fontSize=12, textColor=colors.HexColor('#00703c'))))
     
@@ -485,7 +525,6 @@ if menu == "📊 Dashboard & Analytics":
         conf_e = len(df_dash[df_dash['Status_Clean'].str.contains("confirmado", case=False, na=False)])
         rec_e = len(df_dash[df_dash['Status_Clean'].str.contains("recusado", case=False, na=False)])
         
-        # Win Rate (Taxa de Conversão %)
         total_tratados = conf_e + rec_e
         win_rate = (conf_e / total_tratados * 100) if total_tratados > 0 else 0.0
 
@@ -636,8 +675,6 @@ elif menu == "🛎️ Nova Solicitação (Reservas)":
                     0, 0, 0, 0, "Enviado para time de vendas", "", "", df_editado.to_json(orient='records'), usuario_atual
                 ]
                 aba_dados.append_row(nova_linha)
-                
-                # Registrar Timeline Inicial
                 aba_timeline.append_row([id_unico, datetime.now().strftime("%d/%m/%Y %H:%M"), usuario_atual, "Criação", "Solicitação criada pela equipe de reservas."])
 
                 st.success("✅ Solicitação enviada com sucesso!")
@@ -866,7 +903,6 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     if obs_ajuste_cliente:
                         st.warning(f"💬 **Histórico / Solicitação de Ajuste do Cliente:** {obs_ajuste_cliente}")
 
-                    # --- HISTÓRICO DE FOLLOW-UP (TIMELINE) ---
                     st.markdown("### ⏱️ Histórico de Follow-up (Timeline)")
                     df_tl_grupo = df_timeline[df_timeline['ID_Grupo'] == id_sel]
                     if not df_tl_grupo.empty:
@@ -950,7 +986,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     if novo_status != "Recusado":
                         novo_deadline = st.date_input("Deadline", value=date.today() + timedelta(days=10), key=f"input_deadline_comercial_{v}")
                     
-                    motivos_recusa_lista = ["Preço", "Evento cancelado", "Categoria do Hotel", "Política de Pagamento", "Condições de Cancelamento", "Configuração dos Quartos", "Localização", "Sem retorno do cliente", "Outros"]
+                    motivos_recusa_lista = ["Preço", "Evento cancelado", "Categoria du Hotel", "Política de Pagamento", "Condições de Cancelamento", "Configuração dos Quartos", "Localização", "Sem retorno do cliente", "Outros"]
                     motivo_recusa_input = ""
                     if novo_status == "Recusado":
                         motivo_recusa_input = st.selectbox("Motivo da Recusa:", motivos_recusa_lista, key=f"sel_motivo_{v}")
@@ -1037,7 +1073,6 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                                 idx_proposta_existente = idx_p
                                 break
                         
-                        # --- VERSIONAMENTO DE PROPOSTA ---
                         obs_versao = ""
                         if idx_proposta_existente != -1:
                             valor_antigo = propostas_atuais[idx_proposta_existente-1][4]
@@ -1093,7 +1128,6 @@ elif menu == "📑 Acompanhamento de Propostas":
             elif len(row) > 13: link_proposta = row.iloc[13]
 
             email_cliente = row['Email'] if 'Email' in colunas_reais else row.iloc[2] if len(row) > 2 else ''
-            tel_cliente = row.get('Tel_Usuario', '(11) 99999-9999')
             
             data_criacao = ''
             if 'Data_Criacao' in colunas_reais: data_criacao = row['Data_Criacao']
@@ -1136,13 +1170,11 @@ elif menu == "📑 Acompanhamento de Propostas":
                 if str(link_proposta).startswith("http"):
                     st.code(link_proposta)
                     
-                    # --- BOTÃO WHATSAPP ---
                     msg_whatsapp = f"Olá, {cliente_p}! Segue a proposta comercial atualizada do hotel para o seu evento: {link_proposta}"
                     msg_encoded = urllib.parse.quote(msg_whatsapp)
                     url_whats = f"https://wa.me/?text={msg_encoded}"
                     st.markdown(f'<a href="{url_whats}" target="_blank"><button style="background-color:#25D366; color:white; padding:8px 16px; border:none; border-radius:5px; font-weight:bold; cursor:pointer;">📲 Enviar por WhatsApp</button></a>', unsafe_allow_html=True)
                     
-                    # --- BOTÃO DOWNLOAD PDF DA PROPOSTA ---
                     pdf_prop_bytes = gerar_pdf_proposta_individual(row)
                     st.download_button(
                         label="📄 Baixar Proposta em PDF (Anexo)",
