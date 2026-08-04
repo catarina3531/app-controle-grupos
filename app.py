@@ -63,14 +63,12 @@ try:
     
     @st.cache_data(ttl=60)
     def carregar_dados_cache():
-        # Lê todos os valores crus para tratar cabeçalhos duplicados ou vazios com segurança total
         todos_valores = aba_dados.get_all_values()
         if not todos_valores or len(todos_valores) <= 1:
             return []
         header = [str(h).strip() if str(h).strip() != "" else f"Coluna_{i}" for i, h in enumerate(todos_valores[0])]
         rows = todos_valores[1:]
         
-        # Converte para lista de dicionários manualmente para evitar o erro do gspread
         dados_formatados = []
         for r in rows:
             obj = {}
@@ -201,11 +199,11 @@ st.sidebar.title(f"🏨 Olá, {usuario_atual}")
 st.sidebar.caption(f"Perfil: {perfil}")
 
 opcoes_menu = []
-if perfil == "Gerencial":
+if perfil.lower() == "gerencial":
     opcoes_menu = ["📊 Dashboard", "🛎️ Nova Solicitação", "💼 Gestão de Vendas & Propostas", "📑 Acompanhamento de Propostas", "👀 Follow-up", "⚙️ Gerenciar Usuários"]
-elif perfil == "Hotel":
+elif perfil.lower() == "hotel":
     opcoes_menu = ["🛎️ Nova Solicitação", "👀 Follow-up"]
-elif perfil == "Vendas":
+elif perfil.lower() == "vendas":
     opcoes_menu = ["📊 Dashboard", "🛎️ Nova Solicitação", "💼 Gestão de Vendas & Propostas", "📑 Acompanhamento de Propostas", "👀 Follow-up"]
 
 menu = st.sidebar.radio("Navegação:", opcoes_menu)
@@ -338,7 +336,12 @@ elif menu == "🛎️ Nova Solicitação":
                 st.error(f"⚠️ Solicitação não permitida! O total de apartamentos solicitados é {total_quartos}. Para reservas inferiores a 10 apartamentos, oriente o cliente a consultar diretamente em nosso site: ALL.COM")
             else:
                 id_unico = "G-" + datetime.now().strftime("%Y%m%d%H%M")
-                origem_solicitacao = "Equipe de Vendas" if perfil == "Vendas" else "Equipe de Reservas"
+                
+                # Validação segura independente de maiúsculas/minúsculas
+                if perfil.lower() == "vendas":
+                    origem_solicitacao = "Equipe de Vendas"
+                else:
+                    origem_solicitacao = "Equipe de Reservas"
                 
                 nova_linha = [
                     id_unico, datetime.now().strftime("%d/%m/%Y"), empresa, contato, email, telefone, 
@@ -357,7 +360,7 @@ elif menu == "🛎️ Nova Solicitação":
 # 3. Gestão de Vendas & Proposta
 elif menu == "💼 Gestão de Vendas & Propostas":
     st.header("💼 Tratativa, Precificação e Envio de Proposta")
-    if perfil not in ["Vendas", "Gerencial"]:
+    if perfil.lower() not in ["vendas", "gerencial"]:
         st.error("🔒 Acesso Restrito!")
     else:
         if df.empty:
@@ -616,7 +619,7 @@ elif menu == "👀 Follow-up":
             st.dataframe(df[df['Status_Clean'].str.contains("confirmado", case=False, na=False)][['Check-in', 'Check-out', 'Empresa', 'Receita Total']], use_container_width=True)
 
 # 6. Gerenciar Usuários
-elif menu == "⚙️ Gerenciar Usuários" and perfil == "Gerencial":
+elif menu == "⚙️ Gerenciar Usuários" and perfil.lower() == "gerencial":
     st.header("⚙️ Painel de Controle de Usuários")
     tab_u1, tab_u2 = st.tabs(["📋 Usuários Cadastrados", "➕ Adicionar / Editar Perfil"])
     with tab_u1:
