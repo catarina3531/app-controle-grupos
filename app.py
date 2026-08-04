@@ -652,19 +652,63 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     st.session_state["form_version"] += 1
                     st.rerun()
 
-# 4. Acompanhamento de Propostas
+# 4. Acompanhamento de Propostas (A ÚNICA PARTE QUE FOI ALTERADA)
 elif menu == "📑 Acompanhamento de Propostas":
     st.header("📑 Acompanhamento e Reenvio de Propostas")
     if df_propostas.empty:
         st.info("Nenhuma proposta registrada.")
     else:
+        # Pega as colunas exatas de como estão lá na planilha do Google (com ou sem underline)
+        colunas_reais = df_propostas.columns.tolist()
+        
         for idx, row in df_propostas.iterrows():
-            id_p = row.get('ID_Proposta', '')
-            cliente_p = row.get('Cliente', 'Cliente')
-            link_proposta = row.get('Link_Proposta', '')
-            with st.expander(f"📌 {cliente_p} (ID: {id_p}) - Status: **{row.get('Status', '')}**"):
-                st.write(f"**Valor Total:** R$ {row.get('Valor_Total', '0.00')} | **Criado por:** {row.get('Nome_Usuario', '')}")
-                st.code(link_proposta)
+            # Tenta pegar pelo nome, ou cai no índice numérico se o nome foi alterado na planilha
+            id_p = row['ID_Proposta'] if 'ID_Proposta' in colunas_reais else row.iloc[0] if len(row) > 0 else ''
+            cliente_p = row['Cliente'] if 'Cliente' in colunas_reais else row.iloc[1] if len(row) > 1 else 'Cliente'
+            status_p = row['Status'] if 'Status' in colunas_reais else row.iloc[5] if len(row) > 5 else ''
+            
+            # Valor Total inteligente
+            val_tot = '0.00'
+            if 'Valor_Total' in colunas_reais: val_tot = row['Valor_Total']
+            elif 'Valor Total' in colunas_reais: val_tot = row['Valor Total']
+            elif len(row) > 4: val_tot = row.iloc[4]
+                
+            # Usuário inteligente
+            criado_por = 'Usuário não identificado'
+            if 'Nome_Usuario' in colunas_reais: criado_por = row['Nome_Usuario']
+            elif 'Nome Usuario' in colunas_reais: criado_por = row['Nome Usuario']
+            elif len(row) > 9: criado_por = row.iloc[9]
+            
+            # Link da proposta inteligente
+            link_proposta = ''
+            if 'Link_Proposta' in colunas_reais: link_proposta = row['Link_Proposta']
+            elif 'Link Proposta' in colunas_reais: link_proposta = row['Link Proposta']
+            elif len(row) > 13: link_proposta = row.iloc[13]
+
+            if pd.isna(val_tot) or str(val_tot).strip() == '': val_tot = '0.00'
+            if pd.isna(criado_por) or str(criado_por).strip() == '': criado_por = 'Usuário não identificado'
+            if pd.isna(link_proposta): link_proposta = ''
+
+            # Correção de segurança: Caso as colunas no Google Sheets tenham sido embaralhadas 
+            # e o link tenha caído na coluna do usuário.
+            if str(criado_por).startswith("http"):
+                link_temp = criado_por
+                criado_por = link_proposta
+                link_proposta = link_temp
+
+            with st.expander(f"📌 {cliente_p} (ID: {id_p}) - Status: **{status_p}**"):
+                st.write(f"**Valor Total:** R$ {val_tot} | **Criado por:** {criado_por}")
+                
+                # Mostra o link se encontrou de primeira
+                if str(link_proposta).startswith("http"):
+                    st.code(link_proposta)
+                else:
+                    # Se ainda assim não achou o link, ele varre toda a linha do banco de dados pra achar a URL
+                    possiveis_links = [str(x) for x in row.values if str(x).startswith("http")]
+                    if possiveis_links:
+                        st.code(possiveis_links[0])
+                    else:
+                        st.info("Link ainda não gerado para esta proposta.")
 
 # 5. Follow-up
 elif menu == "👀 Follow-up":
