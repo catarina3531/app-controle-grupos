@@ -110,10 +110,19 @@ def conectar_planilhas():
         aba_timeline = planilha.add_worksheet(title="Timeline", rows=100, cols=5)
         aba_timeline.append_row(['ID_Grupo', 'Data_Hora', 'Usuario', 'Tipo', 'Nota'])
 
-    return aba_dados, aba_vendas_diretas, aba_usuarios, aba_propostas, aba_timeline
+    try:
+        aba_metas = planilha.worksheet("Metas")
+    except:
+        aba_metas = planilha.add_worksheet(title="Metas", rows=13, cols=3)
+        aba_metas.append_row(['Mes', 'Meta_Hospedagem', 'Meta_Grupos'])
+        for m in range(1, 13):
+            mes_str = f"2026-{m:02d}"
+            aba_metas.append_row([mes_str, 50000.0, 100000.0])
+
+    return aba_dados, aba_vendas_diretas, aba_usuarios, aba_propostas, aba_timeline, aba_metas
 
 try:
-    aba_dados, aba_vendas_diretas, aba_usuarios, aba_propostas, aba_timeline = conectar_planilhas()
+    aba_dados, aba_vendas_diretas, aba_usuarios, aba_propostas, aba_timeline, aba_metas = conectar_planilhas()
     
     @st.cache_data(ttl=60)
     def carregar_dados_gerais():
@@ -203,8 +212,20 @@ try:
             return pd.DataFrame(columns=['ID_Grupo', 'Data_Hora', 'Usuario', 'Tipo', 'Nota'])
         return pd.DataFrame(vals[1:], columns=[h.strip() for h in vals[0]])
 
+    @st.cache_data(ttl=60)
+    def carregar_metas_cache():
+        vals = aba_metas.get_all_values()
+        if not vals or len(vals) <= 1:
+            return pd.DataFrame(columns=['Mes', 'Meta_Hospedagem', 'Meta_Grupos'])
+        df_m = pd.DataFrame(vals[1:], columns=[h.strip() for h in vals[0]])
+        for col in ['Meta_Hospedagem', 'Meta_Grupos']:
+            if col in df_m.columns:
+                df_m[col] = pd.to_numeric(df_m[col], errors='coerce').fillna(0.0)
+        return df_m
+
     df = carregar_dados_gerais()
     df_timeline = carregar_timeline_cache()
+    df_metas = carregar_metas_cache()
             
     propostas_valores = carregar_propostas_cache()
     if len(propostas_valores) > 1:
@@ -340,7 +361,7 @@ st.sidebar.markdown("---")
 
 opcoes_menu = []
 if perfil.lower() == "gerencial":
-    opcoes_menu = ["📊 Dashboard & Analytics", "🛎️ Nova Solicitação (Reservas)", "💼 Gestão de Vendas & Propostas", "📑 Acompanhamento de Propostas", "👀 Follow-up", "⚙️ Gerenciar Usuários"]
+    opcoes_menu = ["📊 Dashboard & Analytics", "🛎️ Nova Solicitação (Reservas)", "💼 Gestão de Vendas & Propostas", "📑 Acompanhamento de Propostas", "👀 Follow-up", "🎯 Gestão de Metas", "⚙️ Gerenciar Usuários"]
 elif perfil.lower() == "hotel":
     opcoes_menu = ["🛎️ Nova Solicitação (Reservas)", "👀 Follow-up"]
 elif perfil.lower() == "vendas":
@@ -364,6 +385,7 @@ if menu == "📊 Dashboard & Analytics":
         st.sidebar.subheader("🔍 Filtros Avançados")
         tipo_filtro_data = st.sidebar.radio("Filtrar por Período:", ["Data de Solicitação", "Mês de Competência (Check-in)"])
         
+        mes_sel = "Todos"
         if tipo_filtro_data == "Data de Solicitação":
             meses_disp = sorted(df['Mês/Ano Solicitação'].dropna().unique().tolist(), reverse=True)
             mes_sel = st.sidebar.selectbox("Selecione o Mês de Solicitação:", ["Todos"] + meses_disp)
@@ -395,13 +417,41 @@ if menu == "📊 Dashboard & Analytics":
         col5.metric("Win Rate (%)", f"{win_rate:.1f}%")
 
         st.markdown("---")
-        st.subheader("🎯 Comparativo Realizado vs. Meta de Receita")
-        meta_mensal = st.number_input("Definir Meta de Receita do Mês (R$):", min_value=0.0, value=100000.0, step=5000.0, key="input_meta_receita")
-        receita_confirmada_total = df_dash[df_dash['Status_Clean'].str.contains("confirmado", case=False, na=False)]['Receita Total'].sum()
+        st.subheader("🎯 Acompanhamento de Metas Cadastradas")
         
-        progresso_meta = (receita_confirmada_total / meta_mensal * 100) if meta_mensal > 0 else 0
-        st.progress(min(progresso_meta / 100.0, 1.0))
-        st.write(f"**Realizado Confirmado:** R$ {receita_confirmada_total:,.2f} / **Meta:** R$ {meta_mensal:,.2f} ({progresso_meta:.1f}% atingido)")
+        # Buscar metas cadastradas na aba Metas
+        meta_hospedagem_val = 0.0
+        meta_grupos_val = 0.0
+        if not df_metas.empty:
+            if mes_sel != "Todos" and mes_sel in df_metas['Mes'].values:
+                row_meta = df_metas[df_metas['Mes'] == mes_sel].iloc[0]
+                meta_hospedagem_val = float(row_meta.get('Meta_Hospedagem', 0.0))
+                meta_grupos_val = float(row_meta.get('Meta_Grupos', 0.0))
+            else:
+                meta_hospedagem_val = float(df_metas['Meta_Hospedagem'].sum())
+                meta_grupos_val = float(df_metas['Meta_Grupos'].sum())
+
+        # Cálculo do realizado confirmado
+        df_conf_dash = df_dash[df_dash['Status_Clean'].str.contains("confirmado", case=False, na=False)]
+        
+        realizado_grupos = float(df_conf_dash['Receita Total'].sum())
+        # Hospedagem estimada (Diárias * Tarifas * 5% ISS)
+        realizado_hospedagem = float(((df_conf_dash['Total RN Single'] * df_conf_dash['Tarifa Single']) + 
+                                       (df_conf_dash['Total RN Duplo'] * df_conf_dash['Tarifa Duplo']) + 
+                                       (df_conf_dash['Total RN Triplo'] * df_conf_dash['Tarifa Triplo']) * 1.05).sum())
+
+        col_m1, col_m2 = st.columns(2)
+        with col_m1:
+            st.markdown("##### 🛏️ Meta Receita de Hospedagem")
+            prog_hosp = (realizado_hospedagem / meta_hospedagem_val * 100) if meta_hospedagem_val > 0 else 0
+            st.progress(min(prog_hosp / 100.0, 1.0))
+            st.write(f"**Realizado:** R$ {realizado_hospedagem:,.2f} / **Meta:** R$ {meta_hospedagem_val:,.2f} ({prog_hosp:.1f}%)")
+
+        with col_m2:
+            st.markdown("##### 👥 Meta Segmento Grupos (Total)")
+            prog_grup = (realizado_grupos / meta_grupos_val * 100) if meta_grupos_val > 0 else 0
+            st.progress(min(prog_grup / 100.0, 1.0))
+            st.write(f"**Realizado:** R$ {realizado_grupos:,.2f} / **Meta:** R$ {meta_grupos_val:,.2f} ({prog_grup:.1f}%)")
 
         st.markdown("---")
         st.subheader("📈 Análise de Tendências e Performance")
@@ -1043,7 +1093,34 @@ elif menu == "👀 Follow-up":
             df_conf = df[df['Status_Clean'].str.contains("confirmado|aceita", case=False, na=False)]
             st.dataframe(df_conf[['Check-in', 'Check-out', 'Empresa', 'Receita Total', 'Status']], use_container_width=True)
 
-# 6. Gerenciar Usuários
+# 6. Gestão de Metas
+elif menu == "🎯 Gestão de Metas":
+    if perfil.lower() != "gerencial":
+        st.error("🔒 Acesso Restrito! Apenas perfis gerenciais podem gerenciar as metas.")
+    else:
+        st.header("🎯 Painel de Gestão de Metas Anuais")
+        st.write("Defina e ajuste abaixo as metas mensais de **Hospedagem** e **Segmento Grupos**.")
+        
+        vals_metas = aba_metas.get_all_values()
+        df_metas_view = pd.DataFrame(vals_metas[1:], columns=[h.strip() for h in vals_metas[0]]) if len(vals_metas) > 1 else pd.DataFrame(columns=['Mes', 'Meta_Hospedagem', 'Meta_Grupos'])
+        
+        for col in ['Meta_Hospedagem', 'Meta_Grupos']:
+            if col in df_metas_view.columns:
+                df_metas_view[col] = pd.to_numeric(df_metas_view[col], errors='coerce').fillna(0.0)
+        
+        df_editado_metas = st.data_editor(df_metas_view, hide_index=True, use_container_width=True, key="editor_metas_anuais")
+        
+        if st.button("💾 Salvar Alterações de Metas", type="primary"):
+            aba_metas.clear()
+            aba_metas.append_row(['Mes', 'Meta_Hospedagem', 'Meta_Grupos'])
+            for _, row in df_editado_metas.iterrows():
+                aba_metas.append_row([str(row['Mes']), float(row['Meta_Hospedagem']), float(row['Meta_Grupos'])])
+            
+            st.success("✅ Metas atualizadas com sucesso na planilha!")
+            st.cache_data.clear()
+            st.rerun()
+
+# 7. Gerenciar Usuários
 elif menu == "⚙️ Gerenciar Usuários":
     if perfil.lower() != "gerencial":
         st.error("🔒 Acesso Restrito! Apenas perfis gerenciais podem gerenciar usuários.")
