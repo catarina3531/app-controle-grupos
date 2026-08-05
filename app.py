@@ -5,7 +5,6 @@ import gspread
 from google.oauth2.service_account import Credentials
 import altair as alt
 import json
-import io
 import urllib.parse
 
 st.set_page_config(page_title="CRM Grupos & Propostas", page_icon="🏨", layout="wide")
@@ -302,6 +301,43 @@ usuario_atual = st.session_state["usuario"]
 st.sidebar.title(f"🏨 Olá, {usuario_atual}")
 st.sidebar.caption(f"Perfil: {perfil}")
 
+# --- INÍCIO DOS ALERTAS GLOBAIS NA BARRA LATERAL ---
+if not df.empty:
+    hoje = pd.to_datetime(date.today())
+    
+    # 1. Alerta de Solicitações sem tratativa (> 2 dias úteis)
+    df_sem_trat = df[df['Status_Clean'].str.contains("enviado|solicitação", case=False, na=False)].copy()
+    df_sem_trat['Data_Envio_Parsed'] = pd.to_datetime(df_sem_trat['Data Envio'], format='%d/%m/%Y', errors='coerce')
+    contador_sem_tratativa = 0
+    for _, row in df_sem_trat.iterrows():
+        d_envio = row['Data_Envio_Parsed']
+        if pd.notna(d_envio):
+            if calcular_dias_uteis(d_envio.date(), hoje.date()) > 2:
+                contador_sem_tratativa += 1
+
+    # 2. Alertas de Deadline (Vencendo Hoje e Vencidos)
+    df_deadlines = df[~df['Status_Clean'].isin(['confirmado', 'recusado', 'enviado para time de vendas'])].copy()
+    df_deadlines['Deadline_Parsed'] = pd.to_datetime(df_deadlines['Deadline'], format='%d/%m/%Y', errors='coerce')
+    
+    vencendo_hoje = len(df_deadlines[df_deadlines['Deadline_Parsed'].dt.date == hoje.date()])
+    vencidos = len(df_deadlines[df_deadlines['Deadline_Parsed'].dt.date < hoje.date()])
+
+    if contador_sem_tratativa > 0 or vencendo_hoje > 0 or vencidos > 0:
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("### 🔔 Avisos Importantes")
+        
+    if contador_sem_tratativa > 0:
+        st.sidebar.markdown(f'<div class="alerta-laranja">⚠️ <b>{contador_sem_tratativa}</b> lead(s) sem tratativa (>2 dias)!</div>', unsafe_allow_html=True)
+        
+    if vencendo_hoje > 0:
+        st.sidebar.markdown(f'<div class="alerta-amarelo">⏳ <b>{vencendo_hoje}</b> deadline(s) VENCENDO HOJE!</div>', unsafe_allow_html=True)
+        
+    if vencidos > 0:
+        st.sidebar.markdown(f'<div class="alerta-vermelho">🚨 <b>{vencidos}</b> deadline(s) VENCIDO(S)!</div>', unsafe_allow_html=True)
+# --- FIM DOS ALERTAS GLOBAIS ---
+
+st.sidebar.markdown("---")
+
 opcoes_menu = []
 if perfil.lower() == "gerencial":
     opcoes_menu = ["📊 Dashboard & Analytics", "🛎️ Nova Solicitação (Reservas)", "💼 Gestão de Vendas & Propostas", "📑 Acompanhamento de Propostas", "👀 Follow-up", "⚙️ Gerenciar Usuários"]
@@ -316,34 +352,6 @@ menu = st.sidebar.radio("Navegação:", opcoes_menu)
 if menu == "📊 Dashboard & Analytics":
     st.header("📊 Dashboard Executivo & Performance por Usuário")
     
-    if not df.empty:
-        hoje = pd.to_datetime(date.today())
-        
-        df_sem_trat = df[df['Status_Clean'].str.contains("enviado|solicitação", case=False, na=False)].copy()
-        df_sem_trat['Data_Envio_Parsed'] = pd.to_datetime(df_sem_trat['Data Envio'], format='%d/%m/%Y', errors='coerce')
-        
-        contador_sem_tratativa = 0
-        for _, row in df_sem_trat.iterrows():
-            d_envio = row['Data_Envio_Parsed']
-            if pd.notna(d_envio):
-                dias_uteis = calcular_dias_uteis(d_envio.date(), hoje.date())
-                if dias_uteis > 2:
-                    contador_sem_tratativa += 1
-
-        if contador_sem_tratativa > 0:
-            st.markdown(f'<div class="alerta-laranja">⚠️ ATENÇÃO: Existem {contador_sem_tratativa} solicitação(ões) sem tratativa comercial há mais de 2 dias úteis!</div>', unsafe_allow_html=True)
-
-        df_deadlines = df[~df['Status_Clean'].isin(['confirmado', 'recusado', 'enviado para time de vendas'])].copy()
-        df_deadlines['Deadline_Parsed'] = pd.to_datetime(df_deadlines['Deadline'], format='%d/%m/%Y', errors='coerce')
-        
-        vencendo_hoje = len(df_deadlines[df_deadlines['Deadline_Parsed'].dt.date == hoje.date()])
-        if vencendo_hoje > 0:
-            st.markdown(f'<div class="alerta-amarelo">⏳ ALERTA DE PRAZO: Existem {vencendo_hoje} proposta(s) com DEADLINE VENCENDO HOJE!</div>', unsafe_allow_html=True)
-
-        vencidos = len(df_deadlines[df_deadlines['Deadline_Parsed'].dt.date < hoje.date()])
-        if vencidos > 0:
-            st.markdown(f'<div class="alerta-vermelho">🚨 URGENTE: Existem {vencidos} proposta(s) com DEADLINE VENCIDO sem confirmação!</div>', unsafe_allow_html=True)
-
     if df.empty:
         st.info("Nenhum dado cadastrado.")
     else:
