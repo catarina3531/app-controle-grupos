@@ -442,10 +442,13 @@ if menu == "📊 Dashboard & Analytics":
         ) * 1.05
 
         realizado_hospedagem_grupos = float(df_conf_dash['Hospedagem_Pura'].sum())
-        receita_total_grupos = float(df_conf_dash['Receita Total'].sum())
+        receita_total_cadastrada = float(df_conf_dash['Receita Total'].sum())
+        
+        # O realizado de grupos agora é estritamente a hospedagem pura (sem extras)
+        realizado_grupos_puro = realizado_hospedagem_grupos
         
         # Receita incremental (Extras e A&B gerados pelos grupos)
-        receita_incremental_extras = max(0.0, receita_total_grupos - realizado_hospedagem_grupos)
+        receita_incremental_extras = max(0.0, receita_total_cadastrada - realizado_hospedagem_grupos)
 
         col_m1, col_m2, col_m3 = st.columns(3)
         
@@ -453,13 +456,13 @@ if menu == "📊 Dashboard & Analytics":
             st.markdown("##### 🏨 Hospedagem Realizada (Grupos)")
             prog_hosp = (realizado_hospedagem_grupos / meta_hospedagem_val * 100) if meta_hospedagem_val > 0 else 0
             st.metric("Volume de Diárias (Grupos)", f"R$ {realizado_hospedagem_grupos:,.2f}")
-            st.write(f"Representa **{prog_hosp:.1f}%** da meta global de hospedagem do hotel (Meta: R$ {meta_hospedagem_val:,.2f})")
+            st.markdown(f"Representa **{prog_hosp:.1f}%** da meta global de hospedagem do hotel (Meta: R$ {meta_hospedagem_val:,.2f})")
 
         with col_m2:
             st.markdown("##### 👥 Meta Específica do Segmento Grupos")
-            prog_grup = (receita_total_grupos / meta_grupos_val * 100) if meta_grupos_val > 0 else 0
+            prog_grup = (realizado_grupos_puro / meta_grupos_val * 100) if meta_grupos_val > 0 else 0
             st.progress(min(prog_grup / 100.0, 1.0))
-            st.write(f"**Total Realizado:** R$ {receita_total_grupos:,.2f} / **Meta:** R$ {meta_grupos_val:,.2f} ({prog_grup:.1f}%)")
+            st.markdown(f"**Realizado:** R$ {realizado_grupos_puro:,.2f} / **Meta:** R$ {meta_grupos_val:,.2f} ({prog_grup:.1f}%)")
 
         with col_m3:
             st.markdown("##### ➕ Receita Incremental (Extras / A&B)")
