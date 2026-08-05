@@ -117,7 +117,7 @@ def conectar_planilhas():
         aba_metas.append_row(['Mes', 'Meta_Hospedagem', 'Meta_Grupos'])
         for m in range(1, 13):
             mes_str = f"2026-{m:02d}"
-            aba_metas.append_row([mes_str, 50000.0, 100000.0])
+            aba_metas.append_row([mes_str, 100000.0, 20000.0])
 
     return aba_dados, aba_vendas_diretas, aba_usuarios, aba_propostas, aba_timeline, aba_metas
 
@@ -417,7 +417,7 @@ if menu == "📊 Dashboard & Analytics":
         col5.metric("Win Rate (%)", f"{win_rate:.1f}%")
 
         st.markdown("---")
-        st.subheader("🎯 Acompanhamento de Metas Cadastradas")
+        st.subheader("🎯 Acompanhamento de Metas de Hospedagem & Receita Incremental")
         
         # Buscar metas cadastradas na aba Metas
         meta_hospedagem_val = 0.0
@@ -432,26 +432,39 @@ if menu == "📊 Dashboard & Analytics":
                 meta_grupos_val = float(df_metas['Meta_Grupos'].sum())
 
         # Cálculo do realizado confirmado
-        df_conf_dash = df_dash[df_dash['Status_Clean'].str.contains("confirmado", case=False, na=False)]
+        df_conf_dash = df_dash[df_dash['Status_Clean'].str.contains("confirmado", case=False, na=False)].copy()
         
-        realizado_grupos = float(df_conf_dash['Receita Total'].sum())
-        # Hospedagem estimada (Diárias * Tarifas * 5% ISS)
-        realizado_hospedagem = float(((df_conf_dash['Total RN Single'] * df_conf_dash['Tarifa Single']) + 
-                                       (df_conf_dash['Total RN Duplo'] * df_conf_dash['Tarifa Duplo']) + 
-                                       (df_conf_dash['Total RN Triplo'] * df_conf_dash['Tarifa Triplo']) * 1.05).sum())
+        # Hospedagem pura (Diárias com ISS 5%) gerada pelo segmento de grupos
+        df_conf_dash['Hospedagem_Pura'] = (
+            (df_conf_dash['Total RN Single'] * df_conf_dash['Tarifa Single']) +
+            (df_conf_dash['Total RN Duplo'] * df_conf_dash['Tarifa Duplo']) +
+            (df_conf_dash['Total RN Triplo'] * df_conf_dash['Tarifa Triplo'])
+        ) * 1.05
 
-        col_m1, col_m2 = st.columns(2)
+        realizado_hospedagem_grupos = float(df_conf_dash['Hospedagem_Pura'].sum())
+        receita_total_grupos = float(df_conf_dash['Receita Total'].sum())
+        
+        # Receita incremental (Extras e A&B gerados pelos grupos)
+        receita_incremental_extras = max(0.0, receita_total_grupos - realizado_hospedagem_grupos)
+
+        col_m1, col_m2, col_m3 = st.columns(3)
+        
         with col_m1:
-            st.markdown("##### 🛏️ Meta Receita de Hospedagem")
-            prog_hosp = (realizado_hospedagem / meta_hospedagem_val * 100) if meta_hospedagem_val > 0 else 0
-            st.progress(min(prog_hosp / 100.0, 1.0))
-            st.write(f"**Realizado:** R$ {realizado_hospedagem:,.2f} / **Meta:** R$ {meta_hospedagem_val:,.2f} ({prog_hosp:.1f}%)")
+            st.markdown("##### 🏨 Hospedagem Realizada (Grupos)")
+            prog_hosp = (realizado_hospedagem_grupos / meta_hospedagem_val * 100) if meta_hospedagem_val > 0 else 0
+            st.metric("Volume de Diárias (Grupos)", f"R$ {realizado_hospedagem_grupos:,.2f}")
+            st.write(f"Representa **{prog_hosp:.1f}%** da meta global de hospedagem do hotel (Meta: R$ {meta_hospedagem_val:,.2f})")
 
         with col_m2:
-            st.markdown("##### 👥 Meta Segmento Grupos (Total)")
-            prog_grup = (realizado_grupos / meta_grupos_val * 100) if meta_grupos_val > 0 else 0
+            st.markdown("##### 👥 Meta Específica do Segmento Grupos")
+            prog_grup = (receita_total_grupos / meta_grupos_val * 100) if meta_grupos_val > 0 else 0
             st.progress(min(prog_grup / 100.0, 1.0))
-            st.write(f"**Realizado:** R$ {realizado_grupos:,.2f} / **Meta:** R$ {meta_grupos_val:,.2f} ({prog_grup:.1f}%)")
+            st.write(f"**Total Realizado:** R$ {receita_total_grupos:,.2f} / **Meta:** R$ {meta_grupos_val:,.2f} ({prog_grup:.1f}%)")
+
+        with col_m3:
+            st.markdown("##### ➕ Receita Incremental (Extras / A&B)")
+            st.metric("Gerado em Serviços Adicionais", f"R$ {receita_incremental_extras:,.2f}")
+            st.caption("Valor adicional faturado em extras e A&B além das diárias puras.")
 
         st.markdown("---")
         st.subheader("📈 Análise de Tendências e Performance")
@@ -1099,7 +1112,7 @@ elif menu == "🎯 Gestão de Metas":
         st.error("🔒 Acesso Restrito! Apenas perfis gerenciais podem gerenciar as metas.")
     else:
         st.header("🎯 Painel de Gestão de Metas Anuais")
-        st.write("Defina e ajuste abaixo as metas mensais de **Hospedagem** e **Segmento Grupos**.")
+        st.write("Defina e ajuste abaixo as metas mensais globais de **Hospedagem** e do **Segmento Grupos**.")
         
         vals_metas = aba_metas.get_all_values()
         df_metas_view = pd.DataFrame(vals_metas[1:], columns=[h.strip() for h in vals_metas[0]]) if len(vals_metas) > 1 else pd.DataFrame(columns=['Mes', 'Meta_Hospedagem', 'Meta_Grupos'])
