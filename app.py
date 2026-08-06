@@ -420,7 +420,6 @@ if menu == "📊 Dashboard & Analytics":
         st.markdown("---")
         st.subheader("🎯 Acompanhamento de Metas de Hospedagem & Receita Incremental")
         
-        # Buscar metas cadastradas na aba Metas
         meta_hospedagem_val = 0.0
         meta_grupos_val = 0.0
         if not df_metas.empty:
@@ -432,7 +431,6 @@ if menu == "📊 Dashboard & Analytics":
                 meta_hospedagem_val = float(df_metas['Meta_Hospedagem'].sum())
                 meta_grupos_val = float(df_metas['Meta_Grupos'].sum())
 
-        # Cálculo do realizado restrito estritamente ao mês de check-in (competência) selecionado ou geral
         if mes_sel != "Todos":
             df_conf_dash = df[(df['Status_Clean'].str.contains("confirmado", case=False, na=False)) & (df['Mês/Ano Competência (Check-in)'] == mes_sel)].copy()
         else:
@@ -472,7 +470,6 @@ if menu == "📊 Dashboard & Analytics":
             st.metric("Gerado em Serviços Adicionais", f"R$ {receita_incremental_extras:,.2f}")
             st.caption("Valor adicional faturado em extras e A&B além das diárias puras.")
 
-        # --- SEÇÃO NOVA: RECEITA PREVISTA PARA OS PRÓXIMOS MESES ---
         st.markdown("---")
         st.subheader("🔮 Receita Prevista (Grupos Confirmados por Mês de Check-in)")
         
@@ -950,7 +947,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     if novo_status != "Recusado":
                         novo_deadline = st.date_input("Deadline", value=date.today() + timedelta(days=10), key=f"input_deadline_comercial_{v}")
                     
-                    motivos_recusa_lista = ["Preço", "Evento cancelado", "Categoria du Hotel", "Política de Pagamento", "Condições de Cancelamento", "Configuração dos Quartos", "Localização", "Sem retorno do cliente", "Outros"]
+                    motivos_recusa_lista = ["Preço", "Evento cancelado", "Categoria do Hotel", "Política de Pagamento", "Condições de Cancelamento", "Configuração dos Quartos", "Localização", "Sem retorno do cliente", "Outros"]
                     motivo_recusa_input = ""
                     if novo_status == "Recusado":
                         motivo_recusa_input = st.selectbox("Motivo da Recusa:", motivos_recusa_lista, key=f"sel_motivo_{v}")
@@ -1069,77 +1066,122 @@ elif menu == "📑 Acompanhamento de Propostas":
     if df_propostas.empty:
         st.info("Nenhuma proposta registrada.")
     else:
-        colunas_reais = df_propostas.columns.tolist()
+        df_prop_trab = df_propostas.copy()
         
-        for idx, row in df_propostas.iterrows():
-            id_p = row['ID_Proposta'] if 'ID_Proposta' in colunas_reais else row.iloc[0] if len(row) > 0 else ''
-            cliente_p = row['Cliente'] if 'Cliente' in colunas_reais else row.iloc[1] if len(row) > 1 else 'Cliente'
-            status_p = row['Status'] if 'Status' in colunas_reais else row.iloc[5] if len(row) > 5 else ''
-            
-            val_tot = '0.00'
-            if 'Valor_Total' in colunas_reais: val_tot = row['Valor_Total']
-            elif 'Valor Total' in colunas_reais: val_tot = row['Valor Total']
-            elif len(row) > 4: val_tot = row.iloc[4]
-                
-            criado_por = 'Usuário não identificado'
-            if 'Nome_Usuario' in colunas_reais: criado_por = row['Nome_Usuario']
-            elif 'Nome Usuario' in colunas_reais: criado_por = row['Nome Usuario']
-            elif len(row) > 9: criado_por = row.iloc[9]
-            
-            link_proposta = ''
-            if 'Link_Proposta' in colunas_reais: link_proposta = row['Link_Proposta']
-            elif 'Link Proposta' in colunas_reais: link_proposta = row['Link Proposta']
-            elif len(row) > 13: link_proposta = row.iloc[13]
+        checkin_dict = {}
+        if not df.empty and 'ID' in df.columns:
+            for _, d_row in df.iterrows():
+                d_id = str(d_row['ID']).strip()
+                checkin_dict[d_id] = d_row.get('Check-in', '')
+                checkin_dict['PROP-' + d_id] = d_row.get('Check-in', '')
 
-            email_cliente = row['Email'] if 'Email' in colunas_reais else row.iloc[2] if len(row) > 2 else ''
-            
-            data_criacao = ''
-            if 'Data_Criacao' in colunas_reais: data_criacao = row['Data_Criacao']
-            elif 'Data Criacao' in colunas_reais: data_criacao = row['Data Criacao']
-            elif len(row) > 7: data_criacao = row.iloc[7]
+        df_prop_trab['Check-in_Real'] = df_prop_trab['ID_Proposta'].map(checkin_dict)
+        df_prop_trab['ID_Base'] = df_prop_trab['ID_Proposta'].str.replace('PROP-', '', regex=False)
+        df_prop_trab['Check-in_Real'] = df_prop_trab['Check-in_Real'].fillna(df_prop_trab['ID_Base'].map(lambda x: checkin_dict.get(x, '')))
 
-            obs = row['Observacoes'] if 'Observacoes' in colunas_reais else row.iloc[6] if len(row) > 6 else ''
-            
-            produtos_contratados = ''
-            if 'Produtos_Contratados' in colunas_reais: produtos_contratados = row['Produtos_Contratados']
-            elif 'Produtos Contratados' in colunas_reais: produtos_contratados = row['Produtos Contratados']
-            elif len(row) > 3: produtos_contratados = row.iloc[3]
+        df_prop_trab['Checkin_Parsed'] = pd.to_datetime(df_prop_trab['Check-in_Real'], format='%d/%m/%Y', errors='coerce')
+        df_prop_trab['Mês Competência'] = df_prop_trab['Checkin_Parsed'].dt.to_period('M').astype(str)
 
-            if pd.isna(val_tot) or str(val_tot).strip() == '': val_tot = '0.00'
-            if pd.isna(criado_por) or str(criado_por).strip() == '': criado_por = 'Usuário não identificado'
-            if pd.isna(link_proposta): link_proposta = ''
+        def categorizar_status_prop(status_str):
+            s = str(status_str).strip().lower()
+            if 'confirmado' in s or 'aceita' in s:
+                return 'Aceita'
+            elif 'recusado' in s or 'recusada' in s:
+                return 'Recusada'
+            else:
+                return 'Cotação Enviada'
 
-            if str(criado_por).startswith("http"):
-                link_temp = criado_por
-                criado_por = link_proposta
-                link_proposta = link_temp
+        df_prop_trab['Categoria_Tab'] = df_prop_trab['Status'].apply(categorizar_status_prop)
 
-            with st.expander(f"📌 {cliente_p} (ID: {id_p}) - Status: **{status_p}**"):
-                st.write(f"**Empresa/Cliente:** {cliente_p} | **E-mail:** {email_cliente}")
-                st.write(f"**Data de Criação:** {data_criacao}")
-                st.write(f"**Valor Total:** R$ {val_tot} | **Criado por:** {criado_por}")
-                
-                if obs and str(obs).strip():
-                    st.write(f"💬 **Histórico / Versões:** {obs}")
+        def renderizar_lista_propostas(df_sub):
+            colunas_reais = df_sub.columns.tolist()
+            for idx, row in df_sub.iterrows():
+                id_p = row.get('ID_Proposta', row.iloc[0] if len(row) > 0 else '')
+                cliente_p = row.get('Cliente', row.iloc[1] if len(row) > 1 else 'Cliente')
+                status_p = row.get('Status', row.iloc[5] if len(row) > 5 else '')
+                val_tot = row.get('Valor_Total', row.get('Valor Total', row.iloc[4] if len(row) > 4 else '0.00'))
+                criado_por = row.get('Nome_Usuario', row.get('Nome Usuario', row.get('Criado_Por', 'Usuário não identificado')))
+                link_proposta = row.get('Link_Proposta', row.get('Link Proposta', row.iloc[13] if len(row) > 13 else ''))
+                email_cliente = row.get('Email', row.iloc[2] if len(row) > 2 else '')
+                data_criacao = row.get('Data_Criacao', row.get('Data Criacao', row.iloc[7] if len(row) > 7 else ''))
+                obs = row.get('Observacoes', row.iloc[6] if len(row) > 6 else '')
+                produtos_contratados = row.get('Produtos_Contratados', row.get('Produtos Contratados', row.iloc[3] if len(row) > 3 else ''))
+                checkin_str = row.get('Check-in_Real', 'Não informado')
 
-                st.markdown("---")
-                st.markdown("##### 📄 Resumo da Proposta")
-                if produtos_contratados and str(produtos_contratados).strip():
-                    st.markdown(produtos_contratados, unsafe_allow_html=True)
-                else:
-                    st.info("Nenhum detalhe de produto registrado.")
+                if pd.isna(val_tot) or str(val_tot).strip() == '': val_tot = '0.00'
+                if pd.isna(criado_por) or str(criado_por).strip() == '': criado_por = 'Usuário não identificado'
+                if pd.isna(link_proposta): link_proposta = ''
 
-                st.markdown("---")
-                st.markdown("##### 🔗 Links e Ações Rápidas")
-                if str(link_proposta).startswith("http"):
-                    st.code(link_proposta)
+                if str(criado_por).startswith("http"):
+                    link_temp = criado_por
+                    criado_por = link_proposta
+                    link_proposta = link_temp
+
+                with st.expander(f"📌 {cliente_p} (ID: {id_p}) | Check-in: {checkin_str} - Status: **{status_p}**"):
+                    st.write(f"**Empresa/Cliente:** {cliente_p} | **E-mail:** {email_cliente}")
+                    st.write(f"**Data de Check-in:** {checkin_str} | **Data de Criação:** {data_criacao}")
+                    st.write(f"**Valor Total:** R$ {val_tot} | **Criado por:** {criado_por}")
                     
-                    msg_whatsapp = f"Olá, {cliente_p}! Segue a proposta comercial atualizada do hotel para o seu evento: {link_proposta}"
-                    msg_encoded = urllib.parse.quote(msg_whatsapp)
-                    url_whats = f"https://wa.me/?text={msg_encoded}"
-                    st.markdown(f'<a href="{url_whats}" target="_blank"><button style="background-color:#25D366; color:white; padding:8px 16px; border:none; border-radius:5px; font-weight:bold; cursor:pointer;">📲 Enviar por WhatsApp</button></a>', unsafe_allow_html=True)
-                else:
-                    st.info("Link ainda não gerado para esta proposta.")
+                    if obs and str(obs).strip():
+                        st.write(f"💬 **Histórico / Versões:** {obs}")
+
+                    st.markdown("---")
+                    st.markdown("##### 📄 Resumo da Proposta")
+                    if produtos_contratados and str(produtos_contratados).strip():
+                        st.markdown(produtos_contratados, unsafe_allow_html=True)
+                    else:
+                        st.info("Nenhum detalhe de produto registrado.")
+
+                    st.markdown("---")
+                    st.markdown("##### 🔗 Links e Ações Rápidas")
+                    if str(link_proposta).startswith("http"):
+                        st.code(link_proposta)
+                        
+                        msg_whatsapp = f"Olá, {cliente_p}! Segue a proposta comercial atualizada do hotel para o seu evento: {link_proposta}"
+                        msg_encoded = urllib.parse.quote(msg_whatsapp)
+                        url_whats = f"https://wa.me/?text={msg_encoded}"
+                        st.markdown(f'<a href="{url_whats}" target="_blank"><button style="background-color:#25D366; color:white; padding:8px 16px; border:none; border-radius:5px; font-weight:bold; cursor:pointer;">📲 Enviar por WhatsApp</button></a>', unsafe_allow_html=True)
+                    else:
+                        st.info("Link ainda não gerado para esta proposta.")
+
+        tab_cotacao, tab_aceita, tab_recusada = st.tabs(["⏳ Cotação Enviada", "✅ Aceita", "❌ Recusada"])
+
+        with tab_cotacao:
+            st.subheader("Propostas em Cotação / Andamento")
+            df_sub_cot = df_prop_trab[df_prop_trab['Categoria_Tab'] == 'Cotação Enviada'].copy()
+            if not df_sub_cot.empty:
+                df_sub_cot = df_sub_cot.sort_values(by='Checkin_Parsed', ascending=True, na_position='last')
+                renderizar_lista_propostas(df_sub_cot)
+            else:
+                st.info("Nenhuma proposta em cotação no momento.")
+
+        with tab_aceita:
+            st.subheader("Propostas Aceitas / Confirmadas")
+            df_sub_aceita = df_prop_trab[df_prop_trab['Categoria_Tab'] == 'Aceita'].copy()
+            if not df_sub_aceita.empty:
+                meses_aceita = sorted(df_sub_aceita['Mês Competência'].dropna().unique().tolist())
+                filtro_mes_aceita = st.selectbox("Filtrar por Mês de Competência da Estada:", ["Todos"] + meses_aceita, key="filtro_mes_aceita_prop")
+                if filtro_mes_aceita != "Todos":
+                    df_sub_aceita = df_sub_aceita[df_sub_aceita['Mês Competência'] == filtro_mes_aceita]
+                
+                df_sub_aceita = df_sub_aceita.sort_values(by='Checkin_Parsed', ascending=True, na_position='last')
+                renderizar_lista_propostas(df_sub_aceita)
+            else:
+                st.info("Nenhuma proposta aceita registrada.")
+
+        with tab_recusada:
+            st.subheader("Propostas Recusadas")
+            df_sub_rec = df_prop_trab[df_prop_trab['Categoria_Tab'] == 'Recusada'].copy()
+            if not df_sub_rec.empty:
+                meses_rec = sorted(df_sub_rec['Mês Competência'].dropna().unique().tolist())
+                filtro_mes_rec = st.selectbox("Filtrar por Mês de Competência da Estada:", ["Todos"] + meses_rec, key="filtro_mes_rec_prop")
+                if filtro_mes_rec != "Todos":
+                    df_sub_rec = df_sub_rec[df_sub_rec['Mês Competência'] == filtro_mes_rec]
+                
+                df_sub_rec = df_sub_rec.sort_values(by='Checkin_Parsed', ascending=True, na_position='last')
+                renderizar_lista_propostas(df_sub_rec)
+            else:
+                st.info("Nenhuma proposta recusada registrada.")
 
 # 5. Follow-up
 elif menu == "👀 Follow-up":
