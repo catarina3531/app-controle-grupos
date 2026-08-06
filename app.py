@@ -6,6 +6,7 @@ from google.oauth2.service_account import Credentials
 import altair as alt
 import json
 import urllib.parse
+import io
 
 st.set_page_config(page_title="CRM Grupos & Propostas", page_icon="🏨", layout="wide")
 
@@ -431,10 +432,17 @@ if menu == "📊 Dashboard & Analytics":
                 meta_hospedagem_val = float(df_metas['Meta_Hospedagem'].sum())
                 meta_grupos_val = float(df_metas['Meta_Grupos'].sum())
 
-        # Cálculo do realizado confirmado
-        df_conf_dash = df_dash[df_dash['Status_Clean'].str.contains("confirmado", case=False, na=False)].copy()
+        # Cálculo do realizado restrito estritamente ao mês de check-in (competência) selecionado ou geral
+        if mes_sel != "Todos":
+            df_conf_dash = df[(df['Status_Clean'].str.contains("confirmado", case=False, na=False)) & (df['Mês/Ano Competência (Check-in)'] == mes_sel)].copy()
+        else:
+            df_conf_dash = df[df['Status_Clean'].str.contains("confirmado", case=False, na=False)].copy()
         
-        # Hospedagem pura (Diárias com ISS 5%) gerada pelo segmento de grupos
+        # Se houver filtro de usuário ativo, aplicamos também no financeiro
+        if 'Criado_Por' in df_dash.columns and 'usuario_sel' in locals() and usuario_sel != "Todos":
+            df_conf_dash = df_conf_dash[df_conf_dash['Criado_Por'] == usuario_sel]
+
+        # Hospedagem pura (Diárias com ISS 5%) gerada pelo segmento de grupos no mês de check-in
         df_conf_dash['Hospedagem_Pura'] = (
             (df_conf_dash['Total RN Single'] * df_conf_dash['Tarifa Single']) +
             (df_conf_dash['Total RN Duplo'] * df_conf_dash['Tarifa Duplo']) +
@@ -444,10 +452,7 @@ if menu == "📊 Dashboard & Analytics":
         realizado_hospedagem_grupos = float(df_conf_dash['Hospedagem_Pura'].sum())
         receita_total_cadastrada = float(df_conf_dash['Receita Total'].sum())
         
-        # O realizado de grupos agora é estritamente a hospedagem pura (sem extras)
         realizado_grupos_puro = realizado_hospedagem_grupos
-        
-        # Receita incremental (Extras e A&B gerados pelos grupos)
         receita_incremental_extras = max(0.0, receita_total_cadastrada - realizado_hospedagem_grupos)
 
         col_m1, col_m2, col_m3 = st.columns(3)
@@ -1106,8 +1111,24 @@ elif menu == "👀 Follow-up":
             df_cotacoes = df[df['Status_Clean'].str.contains("cotação enviada|em ajuste", case=False, na=False)]
             st.dataframe(df_cotacoes[['Empresa', 'Deadline', 'Receita Total', 'Status']], use_container_width=True)
         with t3: 
-            df_conf = df[df['Status_Clean'].str.contains("confirmado|aceita", case=False, na=False)]
-            st.dataframe(df_conf[['Check-in', 'Check-out', 'Empresa', 'Receita Total', 'Status']], use_container_width=True)
+            st.subheader("Grupos Confirmados")
+            df_conf = df[df['Status_Clean'].str.contains("confirmado|aceita", case=False, na=False)].copy()
+            if not df_conf.empty:
+                df_conf['Checkin_Parsed'] = pd.to_datetime(df_conf['Check-in'], format='%d/%m/%Y', errors='coerce')
+                df_conf['Mês Check-in'] = df_conf['Checkin_Parsed'].dt.to_period('M').astype(str)
+                
+                meses_conf = sorted(df_conf['Mês Check-in'].dropna().unique().tolist())
+                filtro_mes_conf = st.selectbox("Filtrar por Mês de Check-in:", ["Todos"] + meses_conf, key="filtro_mes_conf_tab")
+                
+                if filtro_mes_conf != "Todos":
+                    df_conf = df_conf[df_conf['Mês Check-in'] == filtro_mes_conf]
+                
+                # Ordenar por data de check-in (mais cedo primeiro / ascendente)
+                df_conf = df_conf.sort_values(by='Checkin_Parsed', ascending=True)
+                
+                st.dataframe(df_conf[['Check-in', 'Check-out', 'Empresa', 'Receita Total', 'Status']], use_container_width=True)
+            else:
+                st.info("Nenhum grupo confirmado registrado.")
 
 # 6. Gestão de Metas
 elif menu == "🎯 Gestão de Metas":
