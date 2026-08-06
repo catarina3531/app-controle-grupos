@@ -438,11 +438,9 @@ if menu == "📊 Dashboard & Analytics":
         else:
             df_conf_dash = df[df['Status_Clean'].str.contains("confirmado", case=False, na=False)].copy()
         
-        # Se houver filtro de usuário ativo, aplicamos também no financeiro
         if 'Criado_Por' in df_dash.columns and 'usuario_sel' in locals() and usuario_sel != "Todos":
             df_conf_dash = df_conf_dash[df_conf_dash['Criado_Por'] == usuario_sel]
 
-        # Hospedagem pura (Diárias com ISS 5%) gerada pelo segmento de grupos no mês de check-in
         df_conf_dash['Hospedagem_Pura'] = (
             (df_conf_dash['Total RN Single'] * df_conf_dash['Tarifa Single']) +
             (df_conf_dash['Total RN Duplo'] * df_conf_dash['Tarifa Duplo']) +
@@ -473,6 +471,52 @@ if menu == "📊 Dashboard & Analytics":
             st.markdown("##### ➕ Receita Incremental (Extras / A&B)")
             st.metric("Gerado em Serviços Adicionais", f"R$ {receita_incremental_extras:,.2f}")
             st.caption("Valor adicional faturado em extras e A&B além das diárias puras.")
+
+        # --- SEÇÃO NOVA: RECEITA PREVISTA PARA OS PRÓXIMOS MESES ---
+        st.markdown("---")
+        st.subheader("🔮 Receita Prevista (Grupos Confirmados por Mês de Check-in)")
+        
+        df_confirmados_todos = df[df['Status_Clean'].str.contains("confirmado", case=False, na=False)].copy()
+        if not df_confirmados_todos.empty:
+            df_confirmados_todos['Hospedagem_Pura'] = (
+                (df_confirmados_todos['Total RN Single'] * df_confirmados_todos['Tarifa Single']) +
+                (df_confirmados_todos['Total RN Duplo'] * df_confirmados_todos['Tarifa Duplo']) +
+                (df_confirmados_todos['Total RN Triplo'] * df_confirmados_todos['Tarifa Triplo'])
+            ) * 1.05
+            
+            df_futuro_mes = df_confirmados_todos.groupby('Mês/Ano Competência (Check-in)').agg(
+                Qtd_Grupos=('ID', 'count'),
+                Hospedagem_Pura=('Hospedagem_Pura', 'sum'),
+                Receita_Total=('Receita Total', 'sum')
+            ).reset_index().sort_values('Mês/Ano Competência (Check-in)')
+            
+            mes_atual_str = datetime.now().strftime("%Y-%m")
+            df_futuro_mes_filtrado = df_futuro_mes[df_futuro_mes['Mês/Ano Competência (Check-in)'] >= mes_atual_str]
+            
+            if not df_futuro_mes_filtrado.empty:
+                c_fut1, c_fut2 = st.columns([2, 1])
+                with c_fut1:
+                    chart_prev = alt.Chart(df_futuro_mes_filtrado).mark_bar(color='#00703c').encode(
+                        x=alt.X('Mês/Ano Competência (Check-in):N', title='Mês de Check-in'),
+                        y=alt.Y('Receita_Total:Q', title='Receita Prevista (R$)'),
+                        tooltip=['Mês/Ano Competência (Check-in)', 'Qtd_Grupos', alt.Tooltip('Receita_Total:Q', format='$,.2f')]
+                    ).properties(height=280)
+                    st.altair_chart(chart_prev, use_container_width=True)
+                with c_fut2:
+                    st.markdown("##### Resumo Próximos Meses")
+                    st.dataframe(
+                        df_futuro_mes_filtrado.rename(columns={
+                            'Mês/Ano Competência (Check-in)': 'Mês',
+                            'Qtd_Grupos': 'Qtd',
+                            'Receita_Total': 'Receita Total (R$)'
+                        })[['Mês', 'Qtd', 'Receita Total (R$)']],
+                        hide_index=True,
+                        use_container_width=True
+                    )
+            else:
+                st.info("Nenhum grupo confirmado com check-in a partir do mês atual.")
+        else:
+            st.info("Nenhum grupo confirmado registrado no sistema.")
 
         st.markdown("---")
         st.subheader("📈 Análise de Tendências e Performance")
@@ -906,7 +950,7 @@ elif menu == "💼 Gestão de Vendas & Propostas":
                     if novo_status != "Recusado":
                         novo_deadline = st.date_input("Deadline", value=date.today() + timedelta(days=10), key=f"input_deadline_comercial_{v}")
                     
-                    motivos_recusa_lista = ["Preço", "Evento cancelado", "Categoria do Hotel", "Política de Pagamento", "Condições de Cancelamento", "Configuração dos Quartos", "Localização", "Sem retorno do cliente", "Outros"]
+                    motivos_recusa_lista = ["Preço", "Evento cancelado", "Categoria du Hotel", "Política de Pagamento", "Condições de Cancelamento", "Configuração dos Quartos", "Localização", "Sem retorno do cliente", "Outros"]
                     motivo_recusa_input = ""
                     if novo_status == "Recusado":
                         motivo_recusa_input = st.selectbox("Motivo da Recusa:", motivos_recusa_lista, key=f"sel_motivo_{v}")
@@ -1123,7 +1167,6 @@ elif menu == "👀 Follow-up":
                 if filtro_mes_conf != "Todos":
                     df_conf = df_conf[df_conf['Mês Check-in'] == filtro_mes_conf]
                 
-                # Ordenar por data de check-in (mais cedo primeiro / ascendente)
                 df_conf = df_conf.sort_values(by='Checkin_Parsed', ascending=True)
                 
                 st.dataframe(df_conf[['Check-in', 'Check-out', 'Empresa', 'Receita Total', 'Status']], use_container_width=True)
